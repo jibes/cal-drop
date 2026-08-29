@@ -28,12 +28,32 @@ export function loadSettings(): Settings {
   }
 }
 
+/**
+ * Store only what the user actually changed. Persisting the whole object would
+ * pin every field forever, so a later change to a deployment default — a new
+ * shared endpoint, say — could never reach anyone who had opened Settings once.
+ */
 export function saveSettings(s: Settings): void {
+  const changed: Partial<Settings> = {};
+  for (const key of Object.keys(defaultSettings) as (keyof Settings)[]) {
+    if (s[key] !== defaultSettings[key]) changed[key] = s[key];
+  }
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    if (Object.keys(changed).length === 0) localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, JSON.stringify(changed));
   } catch {
     /* private mode / storage disabled — settings just don't persist */
   }
+}
+
+/** Drop every stored override and go back to what this deployment ships with. */
+export function resetSettings(): Settings {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* nothing stored to clear */
+  }
+  return { ...defaultSettings };
 }
 
 export function usingSharedEndpoint(s: Settings): boolean {

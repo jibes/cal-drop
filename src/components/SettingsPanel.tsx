@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { sharedEndpoint, usingSharedEndpoint } from '../lib/settings';
+import { defaultSettings, resetSettings, sharedEndpoint } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
 interface Props {
@@ -15,6 +15,15 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
+  // What the app will actually call, which is the thing people get wrong.
+  let host = draft.baseUrl;
+  try {
+    host = new URL(draft.baseUrl).host;
+  } catch {
+    /* incomplete while being typed */
+  }
+  const onShared = Boolean(sharedEndpoint) && draft.baseUrl.trim() === sharedEndpoint;
+
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -24,11 +33,22 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           below. It is never uploaded anywhere else.
         </p>
 
-        {sharedEndpoint && (
+        <p className="hint">
+          Requests go to <strong>{host || '—'}</strong>.
+        </p>
+
+        {sharedEndpoint && !onShared && (
+          <button
+            className="ghost small"
+            onClick={() => setDraft((d) => ({ ...d, baseUrl: sharedEndpoint, apiKey: '' }))}
+          >
+            Use the shared endpoint (no key needed)
+          </button>
+        )}
+        {onShared && (
           <p className="hint">
-            {usingSharedEndpoint(draft)
-              ? 'Currently using the shared endpoint — no key needed, but it is rate limited. Add your own key to lift that.'
-              : 'Leave the key empty and set the base URL back to the shared endpoint to use it without a key.'}
+            Using the shared endpoint — no key needed, but it is rate limited. Add your own
+            key to lift that.
           </p>
         )}
 
@@ -89,6 +109,14 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
         </label>
 
         <div className="sheet-actions">
+          <button
+            className="ghost small"
+            onClick={() => setDraft(resetSettings())}
+            title={`Back to this deployment's defaults (${defaultSettings.baseUrl})`}
+          >
+            Reset
+          </button>
+          <span className="spacer" />
           <button className="ghost" onClick={onClose}>
             Cancel
           </button>
