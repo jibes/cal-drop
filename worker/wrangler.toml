@@ -3,9 +3,17 @@ main = "worker.js"
 compatibility_date = "2025-01-01"
 
 [vars]
-# Comma-separated list, or "*" to allow any origin.
+# Comma-separated list of allowed origins, or "*" to allow any.
 ALLOWED_ORIGINS = "https://jibes.github.io"
-UPSTREAM_URL = "https://api.openai.com/v1"
+
+# The OpenAI-compatible API this worker fronts.
+UPSTREAM_URL = "https://api.melious.ai/v1"
+
+# Only these models may be requested through the shared endpoint.
+ALLOWED_MODELS = "gemma-4-31b"
+
+# Per-IP requests per day.
+DAILY_LIMIT = "20"
 
 # Uncomment after `npx wrangler kv namespace create RATE_LIMIT` for a real,
 # cross-isolate daily quota. Without it the limit is per-isolate only.

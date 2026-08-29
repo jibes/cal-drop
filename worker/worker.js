@@ -11,9 +11,20 @@
  * Then build the site with VITE_PROXY_URL=https://<your-worker>.workers.dev/v1
  */
 
-const DAILY_LIMIT = 20; // requests per IP per day
-const MAX_BODY_BYTES = 12 * 1024 * 1024; // a couple of downscaled poster images
-const ALLOWED_MODELS = ['gpt-4o-mini', 'gpt-4o'];
+const DEFAULTS = {
+  DAILY_LIMIT: 20, // requests per IP per day
+  MAX_BODY_BYTES: 12 * 1024 * 1024, // a couple of downscaled poster images
+  ALLOWED_MODELS: 'gpt-4o-mini,gpt-4o',
+};
+
+const settings = (env) => ({
+  dailyLimit: Number(env.DAILY_LIMIT || DEFAULTS.DAILY_LIMIT),
+  maxBodyBytes: Number(env.MAX_BODY_BYTES || DEFAULTS.MAX_BODY_BYTES),
+  allowedModels: String(env.ALLOWED_MODELS || DEFAULTS.ALLOWED_MODELS)
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean),
+});
 
 function cors(origin, allowed) {
   const ok = !allowed || allowed === '*' || allowed.split(',').includes(origin);
@@ -38,16 +49,16 @@ const json = (status, body, headers) =>
  */
 const memory = new Map();
 
-async function overQuota(env, ip) {
+async function overQuota(env, ip, limit) {
   const key = `${ip}:${new Date().toISOString().slice(0, 10)}`;
   if (env.RATE_LIMIT) {
     const used = Number((await env.RATE_LIMIT.get(key)) || '0');
-    if (used >= DAILY_LIMIT) return true;
+    if (used >= limit) return true;
     await env.RATE_LIMIT.put(key, String(used + 1), { expirationTtl: 172800 });
     return false;
   }
   const used = memory.get(key) || 0;
-  if (used >= DAILY_LIMIT) return true;
+  if (used >= limit) return true;
   memory.set(key, used + 1);
   return false;
 }
@@ -65,8 +76,10 @@ export default {
       return json(404, { error: 'Not found' }, headers);
     }
 
+    const config = settings(env);
+
     const length = Number(request.headers.get('Content-Length') || '0');
-    if (length > MAX_BODY_BYTES) return json(413, { error: 'Payload too large' }, headers);
+    if (length > config.maxBodyBytes) return json(413, { error: 'Payload too large' }, headers);
 
     let body;
     try {
@@ -75,12 +88,12 @@ export default {
       return json(400, { error: 'Invalid JSON' }, headers);
     }
 
-    if (!ALLOWED_MODELS.includes(body.model)) {
-      return json(400, { error: `model must be one of ${ALLOWED_MODELS.join(', ')}` }, headers);
+    if (!config.allowedModels.includes(body.model)) {
+      return json(400, { error: `model must be one of ${config.allowedModels.join(', ')}` }, headers);
     }
 
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    if (await overQuota(env, ip)) {
+    if (await overQuota(env, ip, config.dailyLimit)) {
       return json(
         429,
         { error: 'Daily limit for the shared endpoint reached. Add your own API key in Settings.' },
