@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { sharedEndpoint, usingSharedEndpoint } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
 interface Props {
@@ -22,6 +23,14 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           Your key stays on this device (browser storage) and is sent only to the endpoint
           below. It is never uploaded anywhere else.
         </p>
+
+        {sharedEndpoint && (
+          <p className="hint">
+            {usingSharedEndpoint(draft)
+              ? 'Currently using the shared endpoint — no key needed, but it is rate limited. Add your own key to lift that.'
+              : 'Leave the key empty and set the base URL back to the shared endpoint to use it without a key.'}
+          </p>
+        )}
 
         <label>
           API base URL

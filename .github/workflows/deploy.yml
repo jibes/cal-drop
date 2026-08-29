@@ -32,6 +32,7 @@ jobs:
           VITE_AI_MODEL: ${{ vars.VITE_AI_MODEL }}
           VITE_AI_TEXT_MODEL: ${{ vars.VITE_AI_TEXT_MODEL }}
           VITE_CORS_PROXY: ${{ vars.VITE_CORS_PROXY }}
+          VITE_PROXY_URL: ${{ vars.VITE_PROXY_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

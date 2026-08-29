@@ -114,10 +114,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .ghost { background: transparent; }
 .small { padding: 5px 10px; font-size: 13px; }
 
-.inputs { margin-top: 18px; display: grid; gap: 12px; }
-
 .row { display: flex; gap: 8px; }
 .row input { flex: 1; min-width: 0; }
+
+.universal {
+  resize: vertical;
+  text-align: left;
+  margin-bottom: 12px;
+}
+
+.dropzone.dragging { border-color: var(--accent); background: var(--surface-2); }
 
 input,
 textarea {
@@ -180,6 +186,8 @@ details textarea { margin: 10px 0; }
 
 .bulk { margin-top: 20px; }
 
+.status { display: flex; align-items: center; }
+
 .results { display: grid; gap: 16px; margin-top: 20px; }
 
 .card {
@@ -189,17 +197,37 @@ details textarea { margin: 10px 0; }
   padding: 16px;
 }
 
-.card-head { display: flex; justify-content: space-between; align-items: center; }
+.card.attention { border-color: var(--warn); }
 
-.badge {
-  font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
+.summary h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
-.badge.good { color: var(--good); }
-.badge.warn { color: var(--warn); }
-.badge.bad { color: var(--bad); }
+
+.when { margin: 6px 0 0; font-size: 15px; }
+.repeat { color: var(--accent); }
+
+.quote {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.targets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.editor { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
 
 .note {
   background: var(--surface-2);
@@ -211,7 +239,15 @@ details textarea { margin: 10px 0; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 
-.card-actions { margin-top: 16px; }
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+a.button { text-decoration: none; display: inline-block; }
 
 .foot { color: var(--muted); font-size: 12px; margin-top: 32px; text-align: center; }
 

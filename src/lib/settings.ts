@@ -1,11 +1,17 @@
 import type { Settings } from './types';
 
 const KEY = 'caldrop.settings.v1';
-
 const env = import.meta.env;
 
+/**
+ * Optional shared endpoint (see worker/). When a deployment sets this, the app
+ * works with no key at all — the worker holds one — and the key field becomes
+ * an opt-in upgrade rather than a wall in front of the first use.
+ */
+export const sharedEndpoint = ((env.VITE_PROXY_URL as string) || '').trim();
+
 export const defaultSettings: Settings = {
-  baseUrl: (env.VITE_AI_BASE_URL as string) || 'https://api.openai.com/v1',
+  baseUrl: sharedEndpoint || (env.VITE_AI_BASE_URL as string) || 'https://api.openai.com/v1',
   apiKey: (env.VITE_AI_API_KEY as string) || '',
   model: (env.VITE_AI_MODEL as string) || 'gpt-4o-mini',
   textModel: (env.VITE_AI_TEXT_MODEL as string) || '',
@@ -30,6 +36,11 @@ export function saveSettings(s: Settings): void {
   }
 }
 
+export function usingSharedEndpoint(s: Settings): boolean {
+  return Boolean(sharedEndpoint) && s.baseUrl.trim() === sharedEndpoint && !s.apiKey.trim();
+}
+
 export function isConfigured(s: Settings): boolean {
-  return Boolean(s.baseUrl.trim() && s.apiKey.trim() && s.model.trim());
+  if (!s.baseUrl.trim() || !s.model.trim()) return false;
+  return Boolean(s.apiKey.trim()) || usingSharedEndpoint(s);
 }

@@ -1,0 +1,14 @@
+name = "caldrop-endpoint"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Comma-separated list, or "*" to allow any origin.
+ALLOWED_ORIGINS = "https://jibes.github.io"
+UPSTREAM_URL = "https://api.openai.com/v1"
+
+# Uncomment after `npx wrangler kv namespace create RATE_LIMIT` for a real,
+# cross-isolate daily quota. Without it the limit is per-isolate only.
+# [[kv_namespaces]]
+# binding = "RATE_LIMIT"
+# id = "<namespace id>"

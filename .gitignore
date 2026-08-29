@@ -6,3 +6,4 @@ dist
 android
 ios
 *.log
+tsconfig.tsbuildinfo
