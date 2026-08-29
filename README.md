@@ -114,6 +114,24 @@ their own key.
 > The default CORS proxy sends the target URL to a third party. Point `VITE_CORS_PROXY` at your
 > own proxy, or clear it and paste page text instead, if that matters for your use.
 
+## Check an endpoint before trusting it
+
+OpenAI-compatible endpoints differ on exactly the things CalDrop leans on:
+streaming, tool calling, image input, and whether the model reads a European
+date correctly. `npm run probe` checks all four against a real endpoint, and the
+last check runs the app's own extraction code — not a copy of it — over a sample
+German poster:
+
+```bash
+CALDROP_BASE_URL=https://api.example.ai/v1 \
+CALDROP_API_KEY=sk-... \
+CALDROP_MODEL=some-model \
+npm run probe
+```
+
+It exits non-zero if the endpoint cannot drive the app, and tells you when a
+text-only model should be paired as `VITE_AI_TEXT_MODEL` behind a vision model.
+
 ## Develop
 
 ```bash
