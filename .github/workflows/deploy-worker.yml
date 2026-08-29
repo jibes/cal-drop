@@ -1,0 +1,66 @@
+name: Deploy shared endpoint (Cloudflare Worker)
+
+# Deploys worker/ so the app can be given an endpoint that answers the browser's
+# CORS preflight and keeps the upstream API key server-side. Runs on demand, and
+# on any change to the worker itself once it is set up.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the required secrets are present
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID UPSTREAM_API_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "Add them under Settings -> Secrets and variables -> Actions -> Secrets." >&2
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          UPSTREAM_API_KEY: ${{ secrets.UPSTREAM_API_KEY }}
+
+      - name: Deploy
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          # Uploaded as a Worker secret, so the key lives only on Cloudflare.
+          secrets: |
+            OPENAI_API_KEY
+        env:
+          OPENAI_API_KEY: ${{ secrets.UPSTREAM_API_KEY }}
+
+      - name: Report the endpoint URL
+        run: |
+          {
+            echo "### Shared endpoint deployed"
+            echo
+            echo "Set this as the repository **variable** \`VITE_PROXY_URL\` (Settings →"
+            echo "Secrets and variables → Actions → Variables), remembering the \`/v1\`:"
+            echo
+            echo '```'
+            echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1 | sed 's|$|/v1|'
+            echo '```'
+            echo
+            echo "Then run the *Deploy to GitHub Pages* workflow so the site picks it up."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DEPLOY_OUTPUT: ${{ steps.deploy.outputs.command-output }}

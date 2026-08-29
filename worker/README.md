@@ -12,7 +12,22 @@ call it from a web page. It exists for two reasons:
 It forwards only `POST /v1/chat/completions`, and passes the response through as
 a stream so CalDrop's live preview still works.
 
-## Deploy
+## Deploy without a terminal (phone-friendly)
+
+`.github/workflows/deploy-worker.yml` does the deploy in CI, so the whole thing
+is browser-only. Add three repository **secrets** under
+Settings → Secrets and variables → Actions → Secrets:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → the ID in the right-hand sidebar (also in the dashboard URL) |
+| `UPSTREAM_API_KEY` | The upstream API key. The workflow uploads it as the Worker secret `OPENAI_API_KEY`; it is never written into `wrangler.toml` or the site bundle |
+
+Then Actions → *Deploy shared endpoint* → **Run workflow**. The run summary
+prints the endpoint URL to use for `VITE_PROXY_URL`.
+
+## Deploy from a terminal
 
 ```bash
 cd worker
