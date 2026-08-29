@@ -1,0 +1,7 @@
+{
+  "appId": "net.bruenecke.caldrop",
+  "appName": "CalDrop",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false },
+  "ios": { "contentInset": "always" }
+}
