@@ -164,7 +164,12 @@ details textarea { margin: 10px 0; }
   background: var(--surface);
   border: 1px solid var(--line);
 }
-.error { border-color: var(--bad); color: var(--bad); }
+.error {
+  border-color: var(--bad);
+  color: var(--bad);
+  white-space: pre-line;
+  font-size: 14px;
+}
 
 .spinner {
   display: inline-block;

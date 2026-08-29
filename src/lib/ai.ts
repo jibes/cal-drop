@@ -79,6 +79,28 @@ function endpoint(baseUrl: string): string {
   return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
 }
 
+/**
+ * fetch() rejects with a bare "Failed to fetch" for every network-level
+ * failure, CORS included — and CORS is by far the likeliest one here, because
+ * an API key plus a JSON content type forces a preflight that most inference
+ * endpoints never answer. The browser logs the real reason to the console and
+ * refuses to expose it to script, so spell out the likely cause and the fix.
+ */
+function describeNetworkFailure(baseUrl: string): string {
+  let host = baseUrl;
+  try {
+    host = new URL(endpoint(baseUrl)).host;
+  } catch {
+    /* an unparseable base URL is its own answer */
+  }
+  return [
+    `Could not reach ${host} — the request never left the browser.`,
+    `Usually this means ${host} does not allow calls from a web page (CORS): it has to answer the preflight and send Access-Control-Allow-Origin for ${location.origin}.`,
+    'Open the browser console to confirm — a CORS block is named there explicitly.',
+    'Fixes: enable CORS on the API, run the app against an endpoint that allows it, or put the worker/ proxy in front (it adds the headers and keeps the key server-side).',
+  ].join('\n');
+}
+
 function buildUserContent(source: ExtractionSource, withImages: boolean): ContentPart[] {
   const today = new Date().toISOString().slice(0, 10);
   const parts: ContentPart[] = [
@@ -221,38 +243,44 @@ async function callModel(
   options: ExtractOptions,
 ): Promise<string> {
   const key = settings.apiKey.trim();
-  const res = await fetch(endpoint(settings.baseUrl), {
-    method: 'POST',
-    signal: options.signal,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(key ? { Authorization: `Bearer ${key}` } : {}),
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      stream: true,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content },
-      ],
-      ...(useTools
-        ? {
-            tools: [
-              {
-                type: 'function',
-                function: {
-                  name: 'save_events',
-                  description: 'Save every event found in the source.',
-                  parameters: EVENT_SCHEMA,
+  let res: Response;
+  try {
+    res = await fetch(endpoint(settings.baseUrl), {
+      method: 'POST',
+      signal: options.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        stream: true,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        ...(useTools
+          ? {
+              tools: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'save_events',
+                    description: 'Save every event found in the source.',
+                    parameters: EVENT_SCHEMA,
+                  },
                 },
-              },
-            ],
-            tool_choice: { type: 'function', function: { name: 'save_events' } },
-          }
-        : { response_format: { type: 'json_object' } }),
-    }),
-  });
+              ],
+              tool_choice: { type: 'function', function: { name: 'save_events' } },
+            }
+          : { response_format: { type: 'json_object' } }),
+      }),
+    });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    throw new Error(describeNetworkFailure(settings.baseUrl));
+  }
 
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 400);

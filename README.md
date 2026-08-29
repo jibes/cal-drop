@@ -114,6 +114,33 @@ their own key.
 > The default CORS proxy sends the target URL to a third party. Point `VITE_CORS_PROXY` at your
 > own proxy, or clear it and paste page text instead, if that matters for your use.
 
+## "Failed to fetch"
+
+This is a browser-level failure, not an API error: the request never left the
+page. Almost always it is CORS. Sending an `Authorization` header with a JSON
+body makes the request non-simple, so the browser sends a `OPTIONS` preflight
+first, and many inference endpoints never answer it — they are built to be
+called from a server, not from a web page.
+
+It has nothing to do with which input you picked; photos, PDFs, links and text
+all fail identically. Confirm it in the browser console, where the block is
+named outright, or from a terminal:
+
+```bash
+curl -i -X OPTIONS https://your-api/v1/chat/completions \
+  -H "Origin: https://<your-pages-origin>" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+```
+
+No `access-control-allow-origin` in the response means CORS is the cause. Three
+ways out:
+
+1. Enable CORS for your origin on the API, if you control it.
+2. Use a provider that allows browser calls.
+3. Put `worker/` in front of it — it answers the preflight, adds the headers and
+   keeps the key server-side. This is what it is for.
+
 ## Check an endpoint before trusting it
 
 OpenAI-compatible endpoints differ on exactly the things CalDrop leans on:
