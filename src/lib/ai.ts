@@ -69,6 +69,20 @@ type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };
 
+/**
+ * How to ask for structured output, most reliable first. Servers differ on
+ * what they support and on how they refuse: some answer 400, some answer 200
+ * with an error event, some accept the parameter and quietly ignore it. So
+ * each rung is tried in turn rather than chosen from a status code.
+ */
+type AskMode = 'tools' | 'json' | 'plain';
+
+const NEXT_MODE: Record<AskMode, AskMode | null> = {
+  tools: 'json',
+  json: 'plain',
+  plain: null,
+};
+
 export interface ExtractOptions {
   signal?: AbortSignal;
   /** Called with the best-known title/date while the response is still arriving. */
@@ -103,7 +117,12 @@ function describeNetworkFailure(): string {
   ].join('\n');
 }
 
-function buildUserContent(source: ExtractionSource, withImages: boolean): ContentPart[] {
+/**
+ * Content is a plain string unless there are images to attach. The array form
+ * is valid everywhere in theory, but a number of servers only accept it when
+ * it actually carries an image, and reject a text-only array as malformed.
+ */
+function buildUserContent(source: ExtractionSource, withImages: boolean): string | ContentPart[] {
   const today = new Date().toISOString().slice(0, 10);
   const parts: ContentPart[] = [
     {
@@ -114,9 +133,10 @@ function buildUserContent(source: ExtractionSource, withImages: boolean): Conten
   if (source.text.trim()) {
     parts.push({ type: 'text', text: `--- source text ---\n${source.text.slice(0, 60000)}` });
   }
-  if (withImages) {
-    for (const url of source.images) parts.push({ type: 'image_url', image_url: { url } });
+  if (!withImages || source.images.length === 0) {
+    return parts.map((part) => (part.type === 'text' ? part.text : '')).join('\n\n');
   }
+  for (const url of source.images) parts.push({ type: 'image_url', image_url: { url } });
   return parts;
 }
 
@@ -215,12 +235,13 @@ function fromCompletion(raw: string): string {
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onProgress?: ExtractOptions['onProgress'],
-): Promise<{ text: string; raw: string }> {
+): Promise<{ text: string; raw: string; error: string }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let raw = '';
   let out = '';
+  let error = '';
   let lastPreview = '';
 
   for (;;) {
@@ -237,12 +258,16 @@ async function readStream(
       if (!trimmed.startsWith('data:')) continue;
       const payload = trimmed.slice(5).trim();
       if (payload === '[DONE]') continue;
-      let delta: StreamDelta | undefined;
+      let event: { choices?: { delta?: StreamDelta }[]; error?: { message?: string } } | undefined;
       try {
-        delta = (JSON.parse(payload) as { choices?: { delta?: StreamDelta }[] }).choices?.[0]?.delta;
+        event = JSON.parse(payload);
       } catch {
         continue;
       }
+      // A refusal can arrive as an event on a 200 response, so the status code
+      // never sees it; without this it reads as an answer containing nothing.
+      if (event?.error?.message) error = event.error.message;
+      const delta = event?.choices?.[0]?.delta;
       out += delta?.tool_calls?.[0]?.function?.arguments ?? delta?.content ?? '';
     }
 
@@ -256,13 +281,13 @@ async function readStream(
     }
   }
   // An answer that never streamed is still an answer.
-  return { text: out.trim() ? out : fromCompletion(raw), raw };
+  return { text: out.trim() ? out : fromCompletion(raw), raw, error };
 }
 
 async function callModel(
-  content: ContentPart[],
+  content: string | ContentPart[],
   settings: Settings,
-  useTools: boolean,
+  mode: AskMode,
   options: ExtractOptions,
 ): Promise<string> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
@@ -285,7 +310,7 @@ async function callModel(
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content },
         ],
-        ...(useTools
+        ...(mode === 'tools'
           ? {
               tools: [
                 {
@@ -299,7 +324,9 @@ async function callModel(
               ],
               tool_choice: { type: 'function', function: { name: 'save_events' } },
             }
-          : { response_format: { type: 'json_object' } }),
+          : mode === 'json'
+            ? { response_format: { type: 'json_object' } }
+            : {}),
       }),
     });
   } catch (err) {
@@ -320,26 +347,30 @@ async function callModel(
     }
     if (res.status === 429 || res.status === 500) throw new Error(message || `HTTP ${res.status}`);
     // Not every OpenAI-compatible server implements tool calling; fall back once.
-    if (useTools && (res.status === 400 || res.status === 404 || res.status === 422)) {
-      return callModel(content, settings, false, options);
+    const simpler = NEXT_MODE[mode];
+    if (simpler && (res.status === 400 || res.status === 404 || res.status === 422)) {
+      return callModel(content, settings, simpler, options);
     }
     throw new Error(message || `API error ${res.status}: ${detail || res.statusText}`);
   }
 
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
-  const { text, raw } = await readStream(res.body, options.onProgress);
+  const { text, raw, error } = await readStream(res.body, options.onProgress);
   if (text.trim()) return text;
 
-  // A server that ignores `tools` rather than refusing them answers 200 with
-  // nothing useful, so the plain-JSON retry has to cover that case too — a
-  // status-code check alone never sees it.
-  if (useTools) return callModel(content, settings, false, options);
+  // Nothing usable came back. That covers a refusal delivered as an event and
+  // a server that accepts a parameter then ignores it — neither shows up in
+  // the status — so drop to a simpler way of asking and try again.
+  const simpler = NEXT_MODE[mode];
+  if (simpler) return callModel(content, settings, simpler, options);
 
   throw new Error(
-    raw.trim()
-      ? `The endpoint answered, but with nothing this app could read: ${raw.trim().slice(0, 200)}`
-      : 'The endpoint answered with an empty body.',
+    error
+      ? `The model provider rejected the request: ${error}`
+      : raw.trim()
+        ? `The endpoint answered, but with nothing this app could read: ${raw.trim().slice(0, 200)}`
+        : 'The endpoint answered with an empty body.',
   );
 }
 
@@ -349,7 +380,7 @@ async function runPass(
   withImages: boolean,
   options: ExtractOptions,
 ): Promise<EventDraft[]> {
-  const raw = await callModel(buildUserContent(source, withImages), settings, true, options);
+  const raw = await callModel(buildUserContent(source, withImages), settings, 'tools', options);
   const parsed = parseJson(raw);
   const events = Array.isArray(parsed.events) ? parsed.events : [];
   return events.map(toDraft).filter((e) => e.startDate);
