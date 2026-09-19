@@ -88,6 +88,20 @@ Without `ACCESS_CODE` set, the endpoint is open to anyone who learns the URL,
 and the only limit is `DAILY_LIMIT` per IP — which an attacker with several
 addresses walks straight past.
 
+## Photos need a model that can read one
+
+Plenty of capable text models cannot take an image at all, and the refusal
+arrives as a malformed-request error that says nothing about images — so it
+looks like a bug in the request rather than a limit of the model.
+
+`GET /v1/models` is proxied through for exactly this reason: the app's endpoint
+report lists what the provider offers, so choosing a model does not mean
+reading someone's documentation. Put a vision-capable id in `VISION_MODEL` and
+only requests carrying a picture use it; text, links and text-layer PDFs stay
+on `MODEL`.
+
+Leave `VISION_MODEL` unset when `MODEL` reads images, and nothing changes.
+
 ## When something upstream fails
 
 An upstream failure is never the caller's to fix — their access code was
@@ -114,7 +128,8 @@ mean touching code:
 | --- | --- |
 | `ALLOWED_ORIGINS` | Comma-separated origins allowed to call it, or `*` |
 | `UPSTREAM_URL` | The OpenAI-compatible API being fronted |
-| `MODEL` | The one model this endpoint answers with. Whatever the app sends is discarded |
+| `MODEL` | The model this endpoint answers with. Whatever the app sends is discarded |
+| `VISION_MODEL` | Optional. Used only for requests carrying a picture; falls back to `MODEL` |
 | `UPSTREAM_URL` | Base URL of the API being fronted, without a trailing slash |
 | `DAILY_LIMIT` | Requests per IP per day |
 | `MAX_BODY_BYTES` | Request size cap (default 12 MB) |

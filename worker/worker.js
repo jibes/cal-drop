@@ -19,8 +19,20 @@ const DEFAULTS = {
   MAX_PAGE_BYTES: 1024 * 1024, // a fetched event page
 };
 
+/** Does this request attach a picture, in any of the shapes providers use? */
+function carriesImage(body) {
+  return (body.messages || []).some(
+    (message) =>
+      Array.isArray(message?.content) &&
+      message.content.some((part) => ['image_url', 'image', 'input_image'].includes(part?.type)),
+  );
+}
+
 const settings = (env) => ({
   model: String(env.MODEL || DEFAULTS.MODEL),
+  // Falls back to MODEL, so an endpoint whose model reads images needs no
+  // second setting and nothing changes for one that never sees a picture.
+  visionModel: String(env.VISION_MODEL || env.MODEL || DEFAULTS.MODEL),
   dailyLimit: Number(env.DAILY_LIMIT || DEFAULTS.DAILY_LIMIT),
   maxBodyBytes: Number(env.MAX_BODY_BYTES || DEFAULTS.MAX_BODY_BYTES),
   maxPageBytes: Number(env.MAX_PAGE_BYTES || DEFAULTS.MAX_PAGE_BYTES),
@@ -184,18 +196,13 @@ export default {
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
 
-    if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/test-image')) {
+    const requestUrl = new URL(request.url);
+
+    if (request.method === 'GET' && requestUrl.pathname.endsWith('/test-image')) {
       return new Response(Uint8Array.from(atob(TEST_IMAGE), (c) => c.charCodeAt(0)), {
         headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', ...headers },
       });
     }
-    if (request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
-
-    const url = new URL(request.url);
-    const isChat = url.pathname.endsWith('/chat/completions');
-    const isFetch = url.pathname.endsWith('/fetch');
-    if (!isChat && !isFetch) return json(404, { error: 'Not found' }, headers);
-
     // A browser that is not one of ours is turned away outright. A request with
     // no Origin at all is not a browser, so it is left to the access code below.
     if (origin && !originAllowed(origin, env.ALLOWED_ORIGINS)) {
@@ -214,6 +221,12 @@ export default {
       }
     }
 
+    const isChat = requestUrl.pathname.endsWith('/chat/completions');
+    const isFetch = requestUrl.pathname.endsWith('/fetch');
+    const isModels = requestUrl.pathname.endsWith('/models');
+    if (!isChat && !isFetch && !isModels) return json(404, { error: 'Not found' }, headers);
+    if (!isModels && request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
+
     const config = settings(env);
 
     if (!env.OPENAI_API_KEY) {
@@ -224,6 +237,25 @@ export default {
         { error: 'This endpoint is missing its upstream key. Its operator must set the OPENAI_API_KEY secret.' },
         headers,
       );
+    }
+
+    /**
+     * What the provider offers, read-only. Without this, choosing a model means
+     * reading someone's docs; with it the app can simply show the list.
+     */
+    if (isModels) {
+      try {
+        const listed = await fetch(`${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/models`, {
+          headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+        });
+        const text = await listed.text();
+        return new Response(text, {
+          status: listed.status,
+          headers: { ...headers, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        });
+      } catch {
+        return json(502, { error: 'The endpoint could not reach the model provider.' }, headers);
+      }
     }
 
     // Content-Length is absent on a chunked upload, so it can only be a fast
@@ -275,7 +307,9 @@ export default {
           },
           // The model is the operator's decision, not the caller's: whatever
           // the page sent is discarded so there is one answer to "which model".
-          body: JSON.stringify({ ...body, model: config.model }),
+          // A request carrying pictures may need a different one, since plenty
+          // of good text models cannot read an image at all.
+          body: JSON.stringify({ ...body, model: carriesImage(body) ? config.visionModel : config.model }),
         },
       ));
     } catch {

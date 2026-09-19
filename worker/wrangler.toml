@@ -13,6 +13,10 @@ UPSTREAM_URL = "https://api.melious.ai/v1"
 # whatever it sends is discarded.
 MODEL = "gemma-4-31b"
 
+# Used only for requests that attach a picture. Leave unset to use MODEL for
+# everything; set it when MODEL cannot read images, as gemma-4-31b cannot.
+# VISION_MODEL = "
+
 # Per-IP requests per day.
 DAILY_LIMIT = "20"
 

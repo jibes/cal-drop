@@ -164,15 +164,25 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   }
 
   const code = settings.accessCode.trim();
+  const auth: Record<string, string> = code ? { Authorization: `Bearer ${code}` } : {};
+
+  // Which models exist is the question a failed image probe leads to, so
+  // answer it in the same report rather than in a second round trip.
+  try {
+    const res = await fetch(`${endpoint.replace(/\/+$/, '')}/models`, { headers: auth });
+    const body = (await res.json()) as { data?: { id?: string }[] };
+    const ids = (body.data ?? []).map((m) => m.id).filter(Boolean);
+    emit(ids.length ? `models   ${ids.join(', ')}` : `models   (none listed, HTTP ${res.status})`);
+  } catch (err) {
+    emit(`models   could not be listed: ${(err as Error).message}`);
+  }
+  emit('');
   for (const probe of PROBES) {
     let outcome: string;
     try {
       const res = await fetch(chatUrl(), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(code ? { Authorization: `Bearer ${code}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify(probe.body),
       });
       outcome = readOutcome(res.status, await res.text());
