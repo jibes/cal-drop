@@ -14,6 +14,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # The secrets context is not available to a step's `if`, so the one
+    # decision that depends on it is resolved here, where it is.
+    env:
+      HAS_ACCESS_CODE: ${{ secrets.ACCESS_CODE != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +44,7 @@ jobs:
       # leaving the endpoint open.
       - name: Deploy (with access code)
         id: deploy_coded
-        if: ${{ secrets.ACCESS_CODE != '' }}
+        if: env.HAS_ACCESS_CODE == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -56,7 +60,7 @@ jobs:
 
       - name: Deploy (open)
         id: deploy_open
-        if: ${{ secrets.ACCESS_CODE == '' }}
+        if: env.HAS_ACCESS_CODE != 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -81,7 +85,7 @@ jobs:
             echo
             echo "Then run the *Deploy to GitHub Pages* workflow so the site picks it up."
             echo
-            if [ -n "$HAS_CODE" ]; then
+            if [ "$HAS_ACCESS_CODE" = "true" ]; then
               echo "An access code is set: each user must enter it as the API key in Settings."
             else
               echo "No ACCESS_CODE secret is set, so anyone with this URL can spend your credits."
@@ -90,4 +94,3 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           DEPLOY_OUTPUT: ${{ steps.deploy_coded.outputs.command-output || steps.deploy_open.outputs.command-output }}
-          HAS_CODE: ${{ secrets.ACCESS_CODE }}
