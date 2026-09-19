@@ -9,8 +9,9 @@ ALLOWED_ORIGINS = "https://jibes.github.io"
 # The OpenAI-compatible API this worker fronts.
 UPSTREAM_URL = "https://api.melious.ai/v1"
 
-# Only these models may be requested through the shared endpoint.
-ALLOWED_MODELS = "gemma-4-31b"
+# The one model this endpoint answers with. The app does not choose, and
+# whatever it sends is discarded.
+MODEL = "gemma-4-31b"
 
 # Per-IP requests per day.
 DAILY_LIMIT = "20"

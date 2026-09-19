@@ -43,9 +43,9 @@ paste / drop ───┘                                │                    
 - **Photos and screenshots** are downscaled to 1600px and sent as `image_url` parts.
 - **PDFs** are read with `pdfjs-dist`; when a PDF carries almost no text layer (a scan,
   or a poster with outlined type) its pages are rendered and sent as images instead.
-- **Links** are fetched through a CORS proxy (browsers cannot fetch arbitrary origins),
-  stripped to text, and sent as text. In a native build there is no CORS and the direct
-  fetch is used.
+- **Links** are read by the endpoint, not the browser: it fetches the page,
+  strips it to text and hands that back. No CORS proxy to configure, and no
+  third party sees the links people paste.
 - **Two passes**: anything with a text layer gets a cheap text-only pass first;
   the images are only sent if that finds nothing.
 - **Structured output** via tool calling against a JSON Schema, with a
@@ -76,43 +76,28 @@ find the poster again. So it is also a target.
 
 ## Configuration
 
-The API key is **not** a build-time setting. GitHub Pages serves a static bundle, so
-anything compiled in is readable by anyone who opens devtools. Each user enters their own
-key in Settings; it is kept in `localStorage` on their device and sent only to the
-endpoint they configured.
+There is one setting in the app: an **access code**. Everything else is a
+property of the deployment, not a choice to put in front of someone holding a
+poster.
 
-Build-time env vars supply non-secret defaults only (see `.env.example`):
+| Decision | Where it lives |
+| --- | --- |
+| Which endpoint the app calls | `VITE_PROXY_URL`, committed in `.env.production` |
+| Which model reads the posters | `MODEL` in `worker/wrangler.toml` |
+| Which key pays for it | `OPENAI_API_KEY`, a Worker secret |
+| Who may call it | `ACCESS_CODE` secret + `ALLOWED_ORIGINS` |
+| How often | `DAILY_LIMIT` per IP |
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `VITE_AI_BASE_URL` | OpenAI-compatible base URL | `https://api.openai.com/v1` |
-| `VITE_AI_MODEL` | Vision-capable model | `gpt-4o-mini` |
-| `VITE_AI_TEXT_MODEL` | Optional cheaper model for links/text | (falls back to `VITE_AI_MODEL`) |
-| `VITE_CORS_PROXY` | Proxy template, `{url}` is substituted | `https://r.jina.ai/{url}` |
-| `VITE_PROXY_URL` | Optional shared endpoint (see `worker/`) | (unset — users bring a key) |
+The endpoint URL is not a secret — it is inlined into the public bundle, and
+anyone who opens the app can read it. The access code is, which is why it is
+never built in: each person enters it once and it stays in their browser.
 
-Any OpenAI-compatible endpoint works: OpenAI, Azure OpenAI, OpenRouter, Groq, Together,
-a local Ollama or llama.cpp server. For image input the model must accept
-`image_url` content parts.
+The endpoint ignores whatever model the page asks for and substitutes its own,
+so there is exactly one answer to "which model answered this", and no caller can
+spend the operator's credits on something more expensive.
 
-### The key wall
-
-Asking a stranger to paste an API key before the app does anything is where most
-people leave. `worker/` is a small Cloudflare Worker that holds one key
-server-side, allow-lists the models, and rate-limits per IP, so a first-time user
-can try CalDrop with no key at all and add their own later to lift the limit.
-
-```bash
-cd worker && npx wrangler deploy && npx wrangler secret put OPENAI_API_KEY
-# then build the site with VITE_PROXY_URL=https://<worker>.workers.dev/v1
-```
-
-Deploying it trades away the no-backend property, so it is opt-in: leave
-`VITE_PROXY_URL` unset and CalDrop stays a pure static app where everyone brings
-their own key.
-
-> The default CORS proxy sends the target URL to a third party. Point `VITE_CORS_PROXY` at your
-> own proxy, or clear it and paste page text instead, if that matters for your use.
+Forking works the same way: point `VITE_PROXY_URL` at your own worker, set its
+`MODEL` and `UPSTREAM_URL`, and the app follows.
 
 ## "Failed to fetch"
 
@@ -150,14 +135,14 @@ last check runs the app's own extraction code — not a copy of it — over a sa
 German poster:
 
 ```bash
-CALDROP_BASE_URL=https://api.example.ai/v1 \
-CALDROP_API_KEY=sk-... \
-CALDROP_MODEL=some-model \
+CALDROP_BASE_URL=https://your-worker.workers.dev/v1 \
+CALDROP_ACCESS_CODE=... \
 npm run probe
 ```
 
-It exits non-zero if the endpoint cannot drive the app, and tells you when a
-text-only model should be paired as `VITE_AI_TEXT_MODEL` behind a vision model.
+It checks streaming, tool calling, the `json_object` fallback, image input and
+link reading, then runs the app's own extraction over a sample German poster. It
+exits non-zero if the endpoint cannot drive the app.
 
 ## Develop
 

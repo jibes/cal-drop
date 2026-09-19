@@ -23,12 +23,13 @@ export interface EventDraft {
   notes: string;
 }
 
+/**
+ * The only thing that differs per person. Which endpoint, which model and who
+ * pays are decisions the deployment makes once, not choices to put in front of
+ * someone holding a poster.
+ */
 export interface Settings {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  textModel: string;
-  corsProxy: string;
+  accessCode: string;
 }
 
 export type SourceKind = 'image' | 'pdf' | 'text' | 'url';

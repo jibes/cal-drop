@@ -1,29 +1,29 @@
 /**
- * Optional shared endpoint for CalDrop.
+ * CalDrop's endpoint.
  *
- * The app works fine without this: users bring their own key. Deploy this only
- * if you want people to be able to try CalDrop without one. It holds a single
- * key server-side and exposes just the chat-completions call the app makes.
+ * The app is a static page with no server of its own, so this worker is where
+ * every decision that is not the user's lives: which model answers, which key
+ * pays for it, who is allowed to ask, and how often. The page holds one thing,
+ * the access code, because that is the only part that has to differ per person.
  *
- *   npx wrangler deploy
- *   npx wrangler secret put OPENAI_API_KEY
+ *   POST /v1/chat/completions   proxied to the upstream, model injected here
+ *   POST /v1/fetch              { url } -> { text }, so links need no CORS proxy
  *
- * Then build the site with VITE_PROXY_URL=https://<your-worker>.workers.dev/v1
+ * Deploy: see worker/README.md
  */
 
 const DEFAULTS = {
+  MODEL: 'gpt-4o-mini',
   DAILY_LIMIT: 20, // requests per IP per day
   MAX_BODY_BYTES: 12 * 1024 * 1024, // a couple of downscaled poster images
-  ALLOWED_MODELS: 'gpt-4o-mini,gpt-4o',
+  MAX_PAGE_BYTES: 1024 * 1024, // a fetched event page
 };
 
 const settings = (env) => ({
+  model: String(env.MODEL || DEFAULTS.MODEL),
   dailyLimit: Number(env.DAILY_LIMIT || DEFAULTS.DAILY_LIMIT),
   maxBodyBytes: Number(env.MAX_BODY_BYTES || DEFAULTS.MAX_BODY_BYTES),
-  allowedModels: String(env.ALLOWED_MODELS || DEFAULTS.ALLOWED_MODELS)
-    .split(',')
-    .map((m) => m.trim())
-    .filter(Boolean),
+  maxPageBytes: Number(env.MAX_PAGE_BYTES || DEFAULTS.MAX_PAGE_BYTES),
 });
 
 const originList = (allowed) =>
@@ -48,7 +48,7 @@ function sameSecret(a, b) {
 function cors(origin, allowed) {
   const ok = originAllowed(origin, allowed) && origin !== '';
   return {
-    'Access-Control-Allow-Origin': ok ? origin || '*' : 'null',
+    'Access-Control-Allow-Origin': ok ? origin : 'null',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
@@ -82,6 +82,69 @@ async function overQuota(env, ip, limit) {
   return false;
 }
 
+const PRIVATE_HOST =
+  /^(localhost|.*\.local|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?|\[?f[cd])/i;
+
+/** Read an event page and hand back its text. Doing this here rather than in
+ *  the page means no CORS proxy, no third party seeing the links, and one less
+ *  thing to configure. */
+async function fetchPage(target, maxBytes) {
+  let url;
+  try {
+    url = new URL(target);
+  } catch {
+    return { error: 'That is not a URL.' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { error: 'Only http and https links can be read.' };
+  }
+  if (PRIVATE_HOST.test(url.hostname)) {
+    return { error: 'That address is not reachable from here.' };
+  }
+
+  let res;
+  try {
+    res = await fetch(url.toString(), {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+        // Some sites serve a different page, or none, without a browser-ish UA.
+        'User-Agent': 'Mozilla/5.0 (compatible; CalDrop/1.0; +https://github.com/jibes/cal-drop)',
+      },
+      redirect: 'follow',
+    });
+  } catch {
+    return { error: 'Could not reach that page.' };
+  }
+  if (!res.ok) return { error: `That page answered ${res.status}.` };
+
+  const body = (await res.text()).slice(0, maxBytes);
+  return { text: htmlToText(body) };
+}
+
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+function htmlToText(body) {
+  return body
+    .replace(/<(script|style|noscript|svg|template)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(br|\/p|\/div|\/li|\/h[1-6])[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, code) => {
+      if (code[0] === '#') {
+        const n = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : Number(code.slice(1));
+        return Number.isFinite(n) ? String.fromCodePoint(n) : whole;
+      }
+      return ENTITIES[code.toLowerCase()] ?? whole;
+    })
+    .replace(/[ \t ]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Exported so its behaviour can be tested without a network.
+export { htmlToText };
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -91,9 +154,9 @@ export default {
     if (request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
 
     const url = new URL(request.url);
-    if (!url.pathname.endsWith('/chat/completions')) {
-      return json(404, { error: 'Not found' }, headers);
-    }
+    const isChat = url.pathname.endsWith('/chat/completions');
+    const isFetch = url.pathname.endsWith('/fetch');
+    if (!isChat && !isFetch) return json(404, { error: 'Not found' }, headers);
 
     // A browser that is not one of ours is turned away outright. A request with
     // no Origin at all is not a browser, so it is left to the access code below.
@@ -102,18 +165,14 @@ export default {
     }
 
     /**
-     * Optional shared secret. The site is public, so anything baked into its
-     * bundle is public too — this has to be something the user types once and
-     * that lives only on their device, or it protects nothing.
+     * The site is public, so anything baked into its bundle is public too —
+     * the code has to be something each person enters once and that lives only
+     * on their device, or it protects nothing.
      */
     if (env.ACCESS_CODE) {
       const presented = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
       if (!sameSecret(presented, env.ACCESS_CODE)) {
-        return json(
-          401,
-          { error: 'This shared endpoint needs an access code. Enter it as the API key in Settings.' },
-          headers,
-        );
+        return json(401, { error: 'Wrong or missing access code. Enter it in Settings.' }, headers);
       }
     }
 
@@ -146,22 +205,22 @@ export default {
       return json(400, { error: 'Invalid JSON' }, headers);
     }
 
-    if (!config.allowedModels.includes(body.model)) {
-      return json(400, { error: `model must be one of ${config.allowedModels.join(', ')}` }, headers);
-    }
-
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     if (await overQuota(env, ip, config.dailyLimit)) {
+      const now = new Date();
       const untilMidnightUtc = Math.ceil(
-        (Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1) -
-          Date.now()) /
-          1000,
+        (Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - Date.now()) / 1000,
       );
       return json(
         429,
-        { error: 'Daily limit for the shared endpoint reached. Add your own API key in Settings.' },
+        { error: 'Daily limit reached. It resets at midnight UTC.' },
         { ...headers, 'Retry-After': String(untilMidnightUtc) },
       );
+    }
+
+    if (isFetch) {
+      const result = await fetchPage(String(body.url || ''), config.maxPageBytes);
+      return json(result.error ? 400 : 200, result, headers);
     }
 
     const upstream = await fetch(`${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`, {
@@ -170,7 +229,9 @@ export default {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       },
-      body: JSON.stringify(body),
+      // The model is the operator's decision, not the caller's: whatever the
+      // page sent is discarded so there is exactly one answer to "which model".
+      body: JSON.stringify({ ...body, model: config.model }),
     });
 
     // Streamed straight through, so the app's live preview still works.

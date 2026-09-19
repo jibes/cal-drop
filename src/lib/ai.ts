@@ -1,3 +1,4 @@
+import { endpoint } from './settings';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
 
@@ -74,10 +75,8 @@ export interface ExtractOptions {
   onProgress?: (preview: { title: string; date: string }) => void;
 }
 
-function endpoint(baseUrl: string): string {
-  const base = baseUrl.trim().replace(/\/+$/, '');
-  return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
-}
+const chatUrl = () =>
+  endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
 
 /**
  * fetch() rejects with a bare "Failed to fetch" for every network-level
@@ -86,18 +85,16 @@ function endpoint(baseUrl: string): string {
  * endpoints never answer. The browser logs the real reason to the console and
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
-function describeNetworkFailure(baseUrl: string): string {
-  let host = baseUrl;
+function describeNetworkFailure(): string {
+  let host = endpoint;
   try {
-    host = new URL(endpoint(baseUrl)).host;
+    host = new URL(chatUrl()).host;
   } catch {
-    /* an unparseable base URL is its own answer */
+    /* an unconfigured endpoint is its own answer */
   }
   return [
     `Could not reach ${host} — the request never left the browser.`,
-    `Usually this means ${host} does not allow calls from a web page (CORS): it has to answer the preflight and send Access-Control-Allow-Origin for ${location.origin}.`,
-    'Open the browser console to confirm — a CORS block is named there explicitly.',
-    'Fixes: enable CORS on the API, run the app against an endpoint that allows it, or put the worker/ proxy in front (it adds the headers and keeps the key server-side).',
+    `Either you are offline, that endpoint is not answering, or it is not configured to serve ${location.origin}.`,
   ].join('\n');
 }
 
@@ -236,24 +233,23 @@ async function readStream(
 }
 
 async function callModel(
-  model: string,
   content: ContentPart[],
   settings: Settings,
   useTools: boolean,
   options: ExtractOptions,
 ): Promise<string> {
-  const key = settings.apiKey.trim();
+  const code = settings.accessCode.trim();
   let res: Response;
   try {
-    res = await fetch(endpoint(settings.baseUrl), {
+    res = await fetch(chatUrl(), {
       method: 'POST',
       signal: options.signal,
       headers: {
         'Content-Type': 'application/json',
-        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+        ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
       body: JSON.stringify({
-        model,
+        // No model: the endpoint decides which one answers.
         temperature: 0,
         stream: true,
         messages: [
@@ -279,19 +275,26 @@ async function callModel(
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
-    throw new Error(describeNetworkFailure(settings.baseUrl));
+    throw new Error(describeNetworkFailure());
   }
 
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 400);
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(`The API rejected the key (HTTP ${res.status}). Check it in Settings. ${detail}`);
+    let message = '';
+    try {
+      message = (JSON.parse(detail) as { error?: string }).error || '';
+    } catch {
+      /* not every error body is JSON */
     }
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(message || 'Wrong or missing access code. Enter it in Settings.');
+    }
+    if (res.status === 429 || res.status === 500) throw new Error(message || `HTTP ${res.status}`);
     // Not every OpenAI-compatible server implements tool calling; fall back once.
     if (useTools && (res.status === 400 || res.status === 404 || res.status === 422)) {
-      return callModel(model, content, settings, false, options);
+      return callModel(content, settings, false, options);
     }
-    throw new Error(`API error ${res.status}: ${detail || res.statusText}`);
+    throw new Error(message || `API error ${res.status}: ${detail || res.statusText}`);
   }
 
   if (!res.body) throw new Error('The API returned an empty response.');
@@ -306,8 +309,7 @@ async function runPass(
   withImages: boolean,
   options: ExtractOptions,
 ): Promise<EventDraft[]> {
-  const model = withImages ? settings.model.trim() : (settings.textModel || settings.model).trim();
-  const raw = await callModel(model, buildUserContent(source, withImages), settings, true, options);
+  const raw = await callModel(buildUserContent(source, withImages), settings, true, options);
   const parsed = parseJson(raw);
   const events = Array.isArray(parsed.events) ? parsed.events : [];
   return events.map(toDraft).filter((e) => e.startDate);
@@ -315,7 +317,8 @@ async function runPass(
 
 /**
  * Read a source, cheapest route first: anything with a usable text layer gets a
- * text-only pass, and the images are only sent if that pass finds nothing.
+ * text-only pass, and the images — which cost far more to send — follow only if
+ * that pass finds nothing.
  */
 export async function extractEvents(
   source: ExtractionSource,

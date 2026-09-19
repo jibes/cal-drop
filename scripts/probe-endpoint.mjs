@@ -1,25 +1,24 @@
 /**
- * Check whether an OpenAI-compatible endpoint can actually drive CalDrop.
+ * Check whether a CalDrop endpoint (worker/) can actually drive the app.
  *
- *   CALDROP_BASE_URL=https://api.example.ai/v1 \
- *   CALDROP_API_KEY=sk-... \
- *   CALDROP_MODEL=some-model \
+ *   CALDROP_BASE_URL=https://your-worker.workers.dev/v1 \
+ *   CALDROP_ACCESS_CODE=... \
  *   npm run probe
  *
- * CalDrop needs four things, and endpoints differ on every one of them:
- * streaming, tool calling (with a json_object fallback), image input, and a
- * model that reads dates correctly. This probes all four, the last one by
- * running the app's own extraction path — not a reimplementation of it.
+ * No model is sent: the endpoint picks it. What varies, and therefore what is
+ * worth checking, is whether the model behind it streams, does tool calling
+ * (with a json_object fallback), accepts images, reads dates correctly, and
+ * whether link fetching works. The date check runs the app's own extraction
+ * path rather than a reimplementation that could drift from it.
  */
 import { build } from 'esbuild';
 
-const BASE = (process.env.CALDROP_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
-const KEY = process.env.CALDROP_API_KEY || '';
-const MODEL = process.env.CALDROP_MODEL || 'gpt-4o-mini';
+const BASE = (process.env.CALDROP_BASE_URL || '').replace(/\/+$/, '');
+const KEY = process.env.CALDROP_ACCESS_CODE || process.env.CALDROP_API_KEY || '';
 const URL_ = BASE.endsWith('/chat/completions') ? BASE : `${BASE}/chat/completions`;
 
-if (!KEY) {
-  console.error('Set CALDROP_API_KEY (and optionally CALDROP_BASE_URL / CALDROP_MODEL).');
+if (!BASE) {
+  console.error('Set CALDROP_BASE_URL (your worker URL, ending in /v1).');
   process.exit(2);
 }
 
@@ -29,13 +28,14 @@ const warn = (m) => console.log(`  \x1b[33mWARN\x1b[0m ${m}`);
 
 const results = {};
 
-async function post(body) {
-  const res = await fetch(URL_, {
+const auth = KEY ? { Authorization: `Bearer ${KEY}` } : {};
+
+async function post(body, path = URL_) {
+  return fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` },
-    body: JSON.stringify({ model: MODEL, ...body }),
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body: JSON.stringify(body),
   });
-  return res;
 }
 
 async function collectStream(res) {
@@ -65,7 +65,7 @@ async function collectStream(res) {
   return { text, sawChunks };
 }
 
-console.log(`\nEndpoint : ${URL_}\nModel    : ${MODEL}\n`);
+console.log(`\nEndpoint : ${URL_}\nModel    : chosen by the endpoint\n`);
 
 // 1 — does it answer at all
 console.log('1. Basic chat completion');
@@ -73,6 +73,7 @@ try {
   const res = await post({ messages: [{ role: 'user', content: 'Reply with the word OK.' }] });
   if (!res.ok) {
     fail(`HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+    if (res.status === 401) fail('Set CALDROP_ACCESS_CODE to the endpoint\'s access code.');
     process.exit(1);
   }
   const data = await res.json();
@@ -185,7 +186,7 @@ try {
 } catch (e) {
   fail(e.message);
   warn('Without image input, photos, screenshots and scanned PDFs cannot be read.');
-  warn('Set VITE_AI_MODEL to a vision model and keep this one as VITE_AI_TEXT_MODEL.');
+  warn("Set the endpoint's MODEL to one that accepts images.");
   results.vision = false;
 }
 
@@ -198,6 +199,9 @@ const bundled = await build({
   write: false,
   platform: 'neutral',
   logLevel: 'error',
+  // ai.ts reads the endpoint from the build-time environment, exactly as the
+  // browser bundle does; point that at whatever is being probed.
+  define: { 'import.meta.env.VITE_PROXY_URL': JSON.stringify(BASE) },
 });
 const { extractEvents } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`
@@ -213,7 +217,7 @@ Jeden Dienstag: Jam Session, 21 Uhr, Bar Zwei`;
 try {
   const events = await extractEvents(
     { kind: 'text', label: 'probe poster', images: [], text: POSTER },
-    { baseUrl: BASE, apiKey: KEY, model: MODEL, textModel: '', corsProxy: '' },
+    { accessCode: KEY },
     { onProgress: ({ title }) => title && process.stdout.write(`\r  …streaming: ${title.slice(0, 50)}`) },
   );
   process.stdout.write(`\r${' '.repeat(72)}\r`);
@@ -244,12 +248,26 @@ try {
   results.extract = false;
 }
 
+// 7 — link reading, which the endpoint now does instead of a CORS proxy
+console.log('\n7. Link reading (POST /fetch)');
+try {
+  const res = await post({ url: 'https://example.com' }, `${BASE}/fetch`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!data.text?.trim()) throw new Error('returned no text');
+  pass(`read ${data.text.length} chars: ${JSON.stringify(data.text.slice(0, 60))}`);
+  results.fetch = true;
+} catch (e) {
+  fail(`${e.message} — links will not work, though images and pasted text still will`);
+  results.fetch = false;
+}
+
 console.log('\n--- verdict ---');
 const usable = results.basic && results.stream && (results.tools || results.json) && results.extract;
 console.log(usable ? 'Usable with CalDrop.' : 'Not usable as-is — see the failures above.');
 console.log(
   results.vision
     ? 'Handles photos and scanned PDFs too.'
-    : 'Text only: pair it as VITE_AI_TEXT_MODEL with a vision model in VITE_AI_MODEL.',
+    : "Text only: photos and scanned PDFs will fail until the endpoint's MODEL accepts images.",
 );
 process.exit(usable ? 0 : 1);

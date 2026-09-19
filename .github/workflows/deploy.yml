@@ -26,12 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # Non-secret defaults only. Anything set here is inlined into the
-          # public JS bundle — never put an API key in these.
-          VITE_AI_BASE_URL: ${{ vars.VITE_AI_BASE_URL }}
-          VITE_AI_MODEL: ${{ vars.VITE_AI_MODEL }}
-          VITE_AI_TEXT_MODEL: ${{ vars.VITE_AI_TEXT_MODEL }}
-          VITE_CORS_PROXY: ${{ vars.VITE_CORS_PROXY }}
+          # Optional override of the endpoint committed in .env.production.
+          # A URL, not a secret — it is inlined into the public bundle either way.
           VITE_PROXY_URL: ${{ vars.VITE_PROXY_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

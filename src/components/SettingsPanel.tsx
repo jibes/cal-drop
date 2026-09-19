@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { defaultSettings, resetSettings, sharedEndpoint } from '../lib/settings';
+import { endpointHost, resetSettings } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
 interface Props {
@@ -9,120 +9,48 @@ interface Props {
 }
 
 export function SettingsPanel({ settings, onSave, onClose }: Props) {
-  const [draft, setDraft] = useState<Settings>(settings);
-  const [showKey, setShowKey] = useState(false);
-
-  const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
-    setDraft((d) => ({ ...d, [key]: value }));
-
-  // What the app will actually call, which is the thing people get wrong.
-  let host = draft.baseUrl;
-  try {
-    host = new URL(draft.baseUrl).host;
-  } catch {
-    /* incomplete while being typed */
-  }
-  const onShared = Boolean(sharedEndpoint) && draft.baseUrl.trim() === sharedEndpoint;
+  const [code, setCode] = useState(settings.accessCode);
+  const [show, setShow] = useState(false);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>Settings</h2>
-        <p className="hint">
-          Your key stays on this device (browser storage) and is sent only to the endpoint
-          below. It is never uploaded anywhere else.
-        </p>
-
-        <p className="hint">
-          Requests go to <strong>{host || '—'}</strong>.
-        </p>
-
-        {sharedEndpoint && !onShared && (
-          <button
-            className="ghost small"
-            onClick={() => setDraft((d) => ({ ...d, baseUrl: sharedEndpoint }))}
-          >
-            Use the shared endpoint
-          </button>
-        )}
-        {onShared && (
-          <p className="hint">
-            Using the shared endpoint. It is rate limited, and if its operator set an access
-            code you need to enter that below. Your own API key works here too.
-          </p>
-        )}
 
         <label>
-          API base URL
-          <input
-            value={draft.baseUrl}
-            onChange={(e) => set('baseUrl', e.target.value)}
-            placeholder="https://api.openai.com/v1"
-            autoComplete="off"
-          />
-        </label>
-
-        <label>
-          {onShared ? 'Access code or API key' : 'API key'}
+          Access code
           <span className="row">
             <input
-              type={showKey ? 'text' : 'password'}
-              value={draft.apiKey}
-              onChange={(e) => set('apiKey', e.target.value)}
-              placeholder="sk-…"
+              type={show ? 'text' : 'password'}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="from whoever runs this"
               autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              onKeyDown={(e) => e.key === 'Enter' && onSave({ accessCode: code })}
             />
-            <button type="button" className="ghost" onClick={() => setShowKey((v) => !v)}>
-              {showKey ? 'Hide' : 'Show'}
+            <button type="button" className="ghost" onClick={() => setShow((v) => !v)}>
+              {show ? 'Hide' : 'Show'}
             </button>
           </span>
         </label>
-
-        <label>
-          Vision model
-          <input
-            value={draft.model}
-            onChange={(e) => set('model', e.target.value)}
-            placeholder="gpt-4o-mini"
-            autoComplete="off"
-          />
-        </label>
-
-        <label>
-          Text model <span className="muted">(optional, used for links and pasted text)</span>
-          <input
-            value={draft.textModel}
-            onChange={(e) => set('textModel', e.target.value)}
-            placeholder="same as vision model"
-            autoComplete="off"
-          />
-        </label>
-
-        <label>
-          CORS proxy for links <span className="muted">({'{url}'} is replaced)</span>
-          <input
-            value={draft.corsProxy}
-            onChange={(e) => set('corsProxy', e.target.value)}
-            placeholder="https://r.jina.ai/{url}"
-            autoComplete="off"
-          />
-        </label>
+        <p className="hint">
+          Stays on this device. Everything else — which model reads your posters, and who
+          pays for it — is set by whoever runs {endpointHost()}.
+        </p>
 
         <p className="hint build">Build {__BUILD__} UTC</p>
 
         <div className="sheet-actions">
-          <button
-            className="ghost small"
-            onClick={() => setDraft(resetSettings())}
-            title={`Back to this deployment's defaults (${defaultSettings.baseUrl})`}
-          >
-            Reset
+          <button className="ghost small" onClick={() => setCode(resetSettings().accessCode)}>
+            Clear
           </button>
           <span className="spacer" />
           <button className="ghost" onClick={onClose}>
             Cancel
           </button>
-          <button className="primary" onClick={() => onSave(draft)}>
+          <button className="primary" onClick={() => onSave({ accessCode: code })}>
             Save
           </button>
         </div>

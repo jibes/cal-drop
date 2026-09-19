@@ -1,42 +1,26 @@
-/** Fetch an event page's text. Browsers can't fetch arbitrary origins because
- *  of CORS, so we go through the configured proxy. In a Capacitor native build
- *  there is no CORS, and a direct fetch is tried first. */
-export async function fetchPageText(url: string, proxyTemplate: string): Promise<string> {
+import { endpoint } from './settings';
+import type { Settings } from './types';
+
+/**
+ * Read an event page. The browser cannot fetch arbitrary origins, so the
+ * endpoint does it: no CORS proxy to configure, and no third party handed the
+ * links people paste.
+ */
+export async function fetchPageText(url: string, settings: Settings): Promise<string> {
   const target = url.trim();
-  if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) URL.');
+  if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
-  const direct = await tryFetch(target);
-  if (direct) return direct;
+  const res = await fetch(`${endpoint}/fetch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(settings.accessCode.trim() ? { Authorization: `Bearer ${settings.accessCode.trim()}` } : {}),
+    },
+    body: JSON.stringify({ url: target }),
+  });
 
-  if (!proxyTemplate.trim()) {
-    throw new Error(
-      'The browser blocked the request (CORS) and no proxy is configured. Set one in Settings, or paste the page text instead.',
-    );
-  }
-  const proxied = proxyTemplate.includes('{url}')
-    ? proxyTemplate.replace('{url}', encodeURIComponent(target))
-    : proxyTemplate + target;
-
-  const viaProxy = await tryFetch(proxied);
-  if (viaProxy) return viaProxy;
-
-  throw new Error('Could not load that page. Paste its text or a screenshot instead.');
-}
-
-async function tryFetch(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url, { headers: { Accept: 'text/html,text/plain,*/*' } });
-    if (!res.ok) return null;
-    const body = await res.text();
-    return htmlToText(body).slice(0, 60000);
-  } catch {
-    return null;
-  }
-}
-
-function htmlToText(body: string): string {
-  if (!/<html|<body|<div|<p[\s>]/i.test(body)) return body.trim();
-  const doc = new DOMParser().parseFromString(body, 'text/html');
-  doc.querySelectorAll('script, style, noscript, svg').forEach((el) => el.remove());
-  return (doc.body?.textContent || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+  if (!res.ok) throw new Error(data.error || `Could not read that page (HTTP ${res.status}).`);
+  if (!data.text?.trim()) throw new Error('That page had no readable text. Try a screenshot instead.');
+  return data.text;
 }

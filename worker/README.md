@@ -9,8 +9,15 @@ call it from a web page. It exists for two reasons:
 2. **The key wall.** It holds one API key server-side, so a first-time user can
    try CalDrop without pasting a key of their own.
 
-It forwards only `POST /v1/chat/completions`, and passes the response through as
-a stream so CalDrop's live preview still works.
+It serves two routes:
+
+- `POST /v1/chat/completions` — forwarded upstream with **the model replaced by
+  its own**, and streamed straight back so the app's live preview still works.
+  No caller can pick a more expensive model than the operator chose.
+- `POST /v1/fetch` — `{ url }` in, `{ text }` out. Event links are read here
+  rather than in the browser, so there is no CORS proxy to configure and no
+  third party sees the links. Only http(s) is followed, private and
+  link-local addresses are refused, and the response is capped.
 
 ## Deploy without a terminal (phone-friendly)
 
@@ -42,15 +49,16 @@ is a public URL:
 
 ```
 VITE_PROXY_URL = https://caldrop-endpoint.<subdomain>.workers.dev/v1
-VITE_AI_MODEL  = gemma-4-31b
 ```
+
+The model is not named here: the endpoint picks it, so there is one place to
+change it and no way for a caller to override it.
 
 Confirm it before trusting it:
 
 ```bash
 CALDROP_BASE_URL=https://caldrop-endpoint.<subdomain>.workers.dev/v1 \
-CALDROP_API_KEY=anything \
-CALDROP_MODEL=gemma-4-31b \
+CALDROP_ACCESS_CODE=<your access code> \
 npm run probe
 ```
 
@@ -85,7 +93,7 @@ mean touching code:
 | --- | --- |
 | `ALLOWED_ORIGINS` | Comma-separated origins allowed to call it, or `*` |
 | `UPSTREAM_URL` | The OpenAI-compatible API being fronted |
-| `ALLOWED_MODELS` | Only these models may be requested |
+| `MODEL` | The one model this endpoint answers with. Whatever the app sends is discarded |
 | `DAILY_LIMIT` | Requests per IP per day |
 | `MAX_BODY_BYTES` | Request size cap (default 12 MB) |
 
@@ -114,7 +122,9 @@ curl -i -X OPTIONS http://127.0.0.1:8787/v1/chat/completions \
 ```
 
 Verified locally against a mock upstream: preflight answered with the right
-headers; a model outside `ALLOWED_MODELS` rejected with 400; an allowed model
-proxied and streamed through; non-`/chat/completions` paths 404; `GET` 405; the
-upstream key never present in any response header; and the daily limit returning
-429 with a message telling the user to add their own key.
+headers; a model named by the caller discarded in favour of the endpoint's own;
+the response proxied and streamed through; unknown paths 404; `GET` 405; the
+upstream key never present in any response header; the daily limit returning 429
+with `Retry-After`; a missing access code and a wrong one both 401; a foreign
+Origin 403; and `/fetch` refusing loopback, private, link-local and non-http
+addresses.

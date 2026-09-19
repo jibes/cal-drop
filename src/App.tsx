@@ -5,7 +5,7 @@ import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
 import { downloadIcs } from './lib/ics';
 import { fileToDataUrl } from './lib/image';
-import { isConfigured, loadSettings, saveSettings, usingSharedEndpoint } from './lib/settings';
+import { loadSettings, saveSettings } from './lib/settings';
 import { firstUrlIn, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
 import { fetchPageText } from './lib/url';
@@ -26,11 +26,6 @@ export default function App() {
 
   const run = useCallback(async (build: () => Promise<ExtractionSource>, stage: string) => {
     const current = settingsRef.current;
-    if (!isConfigured(current)) {
-      setShowSettings(true);
-      setError('Add your API endpoint, key and model first.');
-      return;
-    }
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -50,7 +45,10 @@ export default function App() {
       setEvents((prev) => [...found, ...prev]);
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
-      setError((err as Error).message || 'Something went wrong.');
+      const message = (err as Error).message || 'Something went wrong.';
+      // An access-code problem is the one error with an obvious next action.
+      if (/access code/i.test(message)) setShowSettings(true);
+      setError(message);
     } finally {
       setBusy('');
       setGlimpse('');
@@ -103,7 +101,7 @@ export default function App() {
 
       if (link && trimmed.length - link.length < 40) {
         void run(async () => {
-          const text = await fetchPageText(link, settingsRef.current.corsProxy);
+          const text = await fetchPageText(link, settingsRef.current);
           return { kind: 'url', label: link, images: [], text };
         }, 'Loading the page…');
         return;
@@ -168,11 +166,7 @@ export default function App() {
         ))}
       </div>
 
-      <footer className="foot">
-        {usingSharedEndpoint(settings)
-          ? 'Using the shared endpoint. Add your own key in Settings for no rate limit.'
-          : 'Runs in your browser. Your key never leaves this device except to call your own endpoint.'}
-      </footer>
+      <footer className="foot">Posters in, calendar out. Nothing is stored.</footer>
 
       {showSettings && (
         <SettingsPanel
