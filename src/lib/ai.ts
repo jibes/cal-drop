@@ -448,5 +448,16 @@ export async function extractEvents(
     const found = await runPass(source, settings, false, options);
     if (found.length > 0 || source.images.length === 0) return found;
   }
-  return runPass(source, settings, true, options);
+
+  try {
+    return await runPass(source, settings, true, options);
+  } catch (err) {
+    if ((err as Error).name === 'AbortError' || source.images.length === 0) throw err;
+    // Text just worked for other sources, so a failure only on the pass that
+    // carries pictures points at the model rather than at this request.
+    throw new Error(
+      `${(err as Error).message}\n\nThis looks like the model behind the endpoint not accepting images. ` +
+        'Pasted text and links still work; photos and scanned PDFs need a vision-capable model.',
+    );
+  }
 }

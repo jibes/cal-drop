@@ -173,12 +173,22 @@ function summarize(detail) {
 
 export { htmlToText, summarize };
 
+/** An 8x8 PNG, served over https so a probe can tell "this provider rejects
+ *  data: URLs" apart from "this provider rejects images". */
+const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mO4Y2OEFTEMLQkAZyhSgVTvwmkAAAAASUVORK5CYII=';
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
     const headers = cors(origin, env.ALLOWED_ORIGINS);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+
+    if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/test-image')) {
+      return new Response(Uint8Array.from(atob(TEST_IMAGE), (c) => c.charCodeAt(0)), {
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', ...headers },
+      });
+    }
     if (request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
 
     const url = new URL(request.url);

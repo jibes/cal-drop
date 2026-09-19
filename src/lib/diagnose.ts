@@ -8,10 +8,12 @@ import type { Settings } from './types';
  * suspicion. This exists because "rejected as malformed" is not a diagnosis.
  */
 
-const PIXEL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mO4Y2OEFTEMLQkAZyhSgVTvwmkAAAAASUVORK5CYII=';
+const DATA_URL = `data:image/png;base64,${PNG_B64}`;
+const HOSTED = endpoint.replace(/\/+$/, '') + '/test-image';
 
 const ASK = 'Reply with the single word OK.';
+const LOOK = 'What colour is this image? One word.';
 
 interface Probe {
   name: string;
@@ -31,15 +33,49 @@ const PROBES: Probe[] = [
     name: '+ content as array of parts',
     body: { messages: [{ role: 'user', content: [{ type: 'text', text: ASK }] }] },
   },
+  // Providers disagree on how an image is attached, so each shape is asked
+  // separately — a 400 for one of them is not a verdict on images as such.
   {
-    name: '+ image_url (data: URL)',
+    name: 'image: image_url {url: data:}',
+    body: {
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: DATA_URL } }] },
+      ],
+    },
+  },
+  {
+    name: 'image: image_url {url: https:}',
+    body: {
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: HOSTED } }] },
+      ],
+    },
+  },
+  {
+    name: 'image: image_url as string',
+    body: {
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: DATA_URL }] },
+      ],
+    },
+  },
+  {
+    name: 'image: input_image',
+    body: {
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'input_image', image_url: DATA_URL }] },
+      ],
+    },
+  },
+  {
+    name: 'image: base64 source block',
     body: {
       messages: [
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'What colour is this? One word.' },
-            { type: 'image_url', image_url: { url: PIXEL } },
+            { type: 'text', text: LOOK },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: PNG_B64 } },
           ],
         },
       ],
@@ -91,8 +127,15 @@ function readOutcome(status: number, raw: string): string {
   }
   if (status !== 200) {
     try {
-      const parsed = JSON.parse(trimmed) as { error?: { message?: string } | string };
+      const parsed = JSON.parse(trimmed) as {
+        error?: { message?: string } | string;
+        upstream?: { status?: number; detail?: string };
+      };
       const message = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message;
+      // The endpoint wraps what the provider said; the provider's own words are
+      // the diagnosis, so prefer them over the wrapper's summary.
+      const detail = parsed.upstream?.detail;
+      if (detail) return `HTTP ${status}: ${detail.slice(0, 200)}`;
       if (message) return `HTTP ${status}: ${message}`;
     } catch {
       /* not JSON */
