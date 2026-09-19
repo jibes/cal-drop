@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EventRow } from './components/EventRow';
+import { CalendarFile, EventRow } from './components/EventRow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
-import { downloadIcs } from './lib/ics';
 import { fileToDataUrl } from './lib/image';
 import { loadSettings, saveSettings } from './lib/settings';
 import { firstUrlIn, takeIncoming } from './lib/share';
@@ -149,9 +148,7 @@ export default function App() {
 
       {events.length > 1 && (
         <div className="bulk">
-          <button onClick={() => downloadIcs(events)}>
-            Download all {events.length} as one .ics
-          </button>
+          <CalendarFile events={events} />
         </div>
       )}
 

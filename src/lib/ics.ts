@@ -1,3 +1,4 @@
+import { endpoint } from './settings';
 import { zonedToUtc } from './tz';
 import type { EventDraft } from './types';
 
@@ -123,6 +124,26 @@ function slug(value: string): string {
       .replace(/^-|-$/g, '')
       .slice(0, 40) || 'event'
   );
+}
+
+/**
+ * A link a phone will recognise. Served over https as text/calendar by the
+ * endpoint, which is what makes an OS offer to open it in a calendar app —
+ * a blob: URL with a download attribute only produces a file in Downloads
+ * that nothing volunteers to handle.
+ *
+ * Returns '' when the calendar is too big to travel in a URL, or when there is
+ * no endpoint to serve it; callers fall back to downloading it directly.
+ */
+export function icsLink(events: EventDraft[]): string {
+  if (!endpoint || events.length === 0) return '';
+  const bytes = new TextEncoder().encode(buildIcs(events));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const encoded = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  if (encoded.length > 12000) return '';
+  const name = events.length === 1 ? slug(events[0].title) : 'events';
+  return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}&c=${encoded}`;
 }
 
 export function downloadIcs(events: EventDraft[]): void {

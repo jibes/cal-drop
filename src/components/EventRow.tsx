@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
 import { describeRrule, formatWhen } from '../lib/format';
-import { downloadIcs } from '../lib/ics';
+import { downloadIcs, icsLink } from '../lib/ics';
 import type { EventDraft } from '../lib/types';
 
 interface Props {
@@ -22,9 +22,25 @@ function needsAttention(event: EventDraft): boolean {
   return event.confidence < 0.6 || Boolean(event.notes);
 }
 
+/**
+ * The calendar file itself. A link when the endpoint can serve it over https,
+ * because that is what a phone will offer to open in a calendar app; a plain
+ * download otherwise.
+ */
+export function CalendarFile({ events }: { events: EventDraft[] }) {
+  const href = icsLink(events);
+  const label = events.length > 1 ? `Calendar file (${events.length})` : 'Calendar file';
+  return href ? (
+    <a className="button" href={href}>
+      {label}
+    </a>
+  ) : (
+    <button onClick={() => downloadIcs(events)}>{label}</button>
+  );
+}
+
 export function EventRow({ event, onChange, onRemove }: Props) {
   const [open, setOpen] = useState(() => needsAttention(event));
-  const [more, setMore] = useState(false);
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
     onChange({ ...event, [key]: value });
@@ -49,37 +65,26 @@ export function EventRow({ event, onChange, onRemove }: Props) {
         {event.notes && <p className="note">⚠ {event.notes}</p>}
       </div>
 
+      {/* Three ways to the same place, none of them this app's preference. */}
       <div className="card-actions">
-        <a
-          className="primary button"
-          href={googleCalendarUrl(event)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Add to calendar
+        <CalendarFile events={[event]} />
+        <a className="button" href={googleCalendarUrl(event)} target="_blank" rel="noreferrer">
+          Google
         </a>
+        <a className="button" href={outlookCalendarUrl(event)} target="_blank" rel="noreferrer">
+          Outlook
+        </a>
+      </div>
+
+      <div className="card-actions secondary">
         <button className="ghost small" onClick={() => setOpen((v) => !v)}>
           {open ? 'Done' : 'Edit'}
         </button>
-        <button className="ghost small" onClick={() => setMore((v) => !v)} aria-label="More">
-          ⋯
+        <button className="ghost small" onClick={onRemove}>
+          Discard
         </button>
+        {caveat && <p className="muted">{caveat}</p>}
       </div>
-
-      {more && (
-        <div className="targets">
-          <a className="button small" href={outlookCalendarUrl(event)} target="_blank" rel="noreferrer">
-            Outlook
-          </a>
-          <button className="small" onClick={() => downloadIcs([event])}>
-            Download .ics
-          </button>
-          <button className="small" onClick={onRemove}>
-            Discard
-          </button>
-          {caveat && <p className="muted">{caveat}</p>}
-        </div>
-      )}
 
       {open && (
         <div className="editor">

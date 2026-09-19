@@ -9,7 +9,7 @@ call it from a web page. It exists for two reasons:
 2. **The key wall.** It holds one API key server-side, so a first-time user can
    try CalDrop without pasting a key of their own.
 
-It serves two routes:
+It serves these routes:
 
 - `POST /v1/chat/completions` — forwarded upstream with **the model replaced by
   its own**, and streamed straight back so the app's live preview still works.
@@ -22,6 +22,15 @@ It serves two routes:
   rather than in the browser, so there is no CORS proxy to configure and no
   third party sees the links. Only http(s) is followed, private and
   link-local addresses are refused, and the response is capped.
+- `GET /v1/ics?c=…` — serves a calendar file as `text/calendar` over https,
+  which is what makes a phone offer to open it in a calendar app. A blob URL
+  with a download attribute does not: it produces a file in Downloads that
+  nothing volunteers to handle. The event travels in the URL and is not
+  stored, and only something beginning `BEGIN:VCALENDAR` is ever served, so
+  this cannot become a way to serve arbitrary content from this origin.
+  Public by necessity — the calendar app follows the link with no headers.
+- `GET /v1/models` and `POST /v1/probe` — what the provider offers, and
+  whether a named model accepts a given request. See below.
 
 ## Deploy without a terminal (phone-friendly)
 

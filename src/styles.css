@@ -239,16 +239,6 @@ details textarea { margin: 10px 0; }
   overflow-wrap: anywhere;
 }
 
-.targets {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-
 .editor { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
 
 .note {
@@ -268,6 +258,16 @@ details textarea { margin: 10px 0; }
   flex-wrap: wrap;
   margin-top: 14px;
 }
+
+/* Equal weight: the app has no opinion about which calendar is yours. */
+.card-actions > .button,
+.card-actions > button:not(.ghost) {
+  flex: 1;
+  min-width: 96px;
+  text-align: center;
+}
+
+.card-actions.secondary { margin-top: 8px; }
 
 a.button { text-decoration: none; display: inline-block; }
 

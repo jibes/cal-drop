@@ -198,6 +198,43 @@ export default {
 
     const requestUrl = new URL(request.url);
 
+    /**
+     * Serve a calendar file over https, so a phone recognises it and offers to
+     * open it in a calendar app. A blob: URL with a download attribute does not
+     * get that: it lands in Downloads with nothing willing to handle it.
+     *
+     * The event travels in the URL and is not stored — it is a few hundred
+     * bytes, and storing it would mean deciding when to delete it. Public by
+     * necessity: the calendar app follows this link with no headers of ours.
+     */
+    if (request.method === 'GET' && requestUrl.pathname.endsWith('/ics')) {
+      const encoded = requestUrl.searchParams.get('c') || '';
+      if (encoded.length > 12000) return json(413, { error: 'Calendar too large for a link' }, headers);
+
+      let text;
+      try {
+        const padded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+        text = new TextDecoder().decode(Uint8Array.from(atob(padded), (ch) => ch.charCodeAt(0)));
+      } catch {
+        return json(400, { error: 'Unreadable calendar' }, headers);
+      }
+      // Only ever serve something that is actually a calendar, so this cannot
+      // be turned into a way of serving arbitrary content from this origin.
+      if (!text.startsWith('BEGIN:VCALENDAR') || !text.includes('END:VCALENDAR')) {
+        return json(400, { error: 'Not a calendar' }, headers);
+      }
+
+      const name = (requestUrl.searchParams.get('n') || 'event').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40);
+      return new Response(text, {
+        headers: {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${name || 'event'}.ics"`,
+          'Cache-Control': 'no-store',
+          ...headers,
+        },
+      });
+    }
+
     if (request.method === 'GET' && requestUrl.pathname.endsWith('/test-image')) {
       return new Response(Uint8Array.from(atob(TEST_IMAGE), (c) => c.charCodeAt(0)), {
         headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', ...headers },
