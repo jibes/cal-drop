@@ -143,7 +143,35 @@ function htmlToText(body) {
 }
 
 // Exported so its behaviour can be tested without a network.
-export { htmlToText };
+/**
+ * Call the upstream, keeping the method across redirects.
+ *
+ * fetch follows redirects by default, and the spec turns a redirected POST
+ * into a GET for 301/302/303. An API behind nginx then answers 405 to the GET,
+ * which looks like the endpoint rejecting the request rather than a redirect
+ * quietly rewriting it. So redirects are handled here, re-issuing the POST.
+ */
+async function callUpstream(url, init, hops = 3) {
+  let target = url;
+  for (let hop = 0; ; hop++) {
+    const res = await fetch(target, { ...init, redirect: 'manual' });
+    if (res.status < 300 || res.status >= 400) return { res, finalUrl: target };
+
+    const location = res.headers.get('Location');
+    if (!location || hop >= hops) {
+      return { res, finalUrl: target, danglingRedirect: location || '(no Location)' };
+    }
+    target = new URL(location, target).toString();
+  }
+}
+
+/** Upstream HTML error pages are unreadable in the UI; reduce them to a line. */
+function summarize(detail) {
+  const text = /<html|<body/i.test(detail) ? htmlToText(detail) : detail;
+  return text.replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+export { htmlToText, summarize };
 
 export default {
   async fetch(request, env) {
@@ -224,22 +252,65 @@ export default {
     }
 
     let upstream;
+    let finalUrl;
+    let danglingRedirect;
     try {
-      upstream = await fetch(`${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      ({ res: upstream, finalUrl, danglingRedirect } = await callUpstream(
+        `${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          },
+          // The model is the operator's decision, not the caller's: whatever
+          // the page sent is discarded so there is one answer to "which model".
+          body: JSON.stringify({ ...body, model: config.model }),
         },
-        // The model is the operator's decision, not the caller's: whatever the
-        // page sent is discarded so there is exactly one answer to "which model".
-        body: JSON.stringify({ ...body, model: config.model }),
-      });
+      ));
     } catch {
       // An uncaught throw here would become a bare 500 with no CORS headers,
       // which a browser cannot read at all — the page would report that its
       // request never left, when in fact this endpoint's upstream is down.
       return json(502, { error: 'The endpoint could not reach the model provider.' }, headers);
+    }
+
+    /**
+     * An upstream failure is never the caller's to fix — their access code was
+     * already checked above — so it must not be passed through as the caller's
+     * status. A forwarded 401 in particular would tell the user their access
+     * code is wrong when it is the operator's upstream key that was rejected.
+     */
+    if (!upstream.ok) {
+      const detail = summarize(await upstream.text().catch(() => ''));
+      const whatHappened =
+        upstream.status === 401 || upstream.status === 403
+          ? "The model provider rejected this endpoint's key. Its operator needs to check the OPENAI_API_KEY secret."
+          : upstream.status === 429
+            ? 'The model provider is rate limiting this endpoint. Try again shortly.'
+            : danglingRedirect
+              ? `The model provider redirected to ${danglingRedirect}, which did not resolve. Check UPSTREAM_URL.`
+              : `The model provider answered ${upstream.status}.`;
+
+      /**
+       * Statuses the caller can act on keep their meaning. A 400 is how a
+       * server without tool-calling support refuses the request, and the app
+       * answers it by retrying in plain-JSON mode — fold it into 502 and that
+       * retry never happens. Everything else becomes 502, because it is the
+       * endpoint or the provider that is broken, not the request.
+       */
+      const CALLER_ACTIONABLE = [400, 404, 422];
+      const status = upstream.status === 429
+        ? 429
+        : CALLER_ACTIONABLE.includes(upstream.status)
+          ? upstream.status
+          : 502;
+
+      return json(
+        status,
+        { error: whatHappened, upstream: { status: upstream.status, url: finalUrl, detail } },
+        headers,
+      );
     }
 
     // Streamed straight through, so the app's live preview still works.

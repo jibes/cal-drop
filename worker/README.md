@@ -14,6 +14,10 @@ It serves two routes:
 - `POST /v1/chat/completions` — forwarded upstream with **the model replaced by
   its own**, and streamed straight back so the app's live preview still works.
   No caller can pick a more expensive model than the operator chose.
+  Redirects are followed manually so the POST stays a POST: `fetch` turns a
+  redirected POST into a GET, and an API behind nginx answers that with
+  `405 Not Allowed`, which reads like a rejected request rather than a
+  rewritten one.
 - `POST /v1/fetch` — `{ url }` in, `{ text }` out. Event links are read here
   rather than in the browser, so there is no CORS proxy to configure and no
   third party sees the links. Only http(s) is followed, private and
@@ -84,6 +88,23 @@ Without `ACCESS_CODE` set, the endpoint is open to anyone who learns the URL,
 and the only limit is `DAILY_LIMIT` per IP — which an attacker with several
 addresses walks straight past.
 
+## When something upstream fails
+
+An upstream failure is never the caller's to fix — their access code was
+already checked — so it is not passed through as their status:
+
+| upstream | what the app sees |
+| --- | --- |
+| 401 / 403 | `502` — the provider rejected **this endpoint's** key, not the user's access code |
+| 429 | `429` — the provider is rate limiting |
+| 400 / 404 / 422 | passed through, so the app can retry without tool calling |
+| anything else | `502` with the upstream status, final URL and a one-line summary |
+
+Passing a bare upstream 401 through would tell the user their access code is
+wrong when the operator's key is what was rejected — so those two cases must
+never share a status. HTML error pages are reduced to a line, because an nginx
+error page in a UI tells the reader nothing.
+
 ## Configuration
 
 All of it lives in `wrangler.toml` under `[vars]`, so changing limits does not
@@ -94,6 +115,7 @@ mean touching code:
 | `ALLOWED_ORIGINS` | Comma-separated origins allowed to call it, or `*` |
 | `UPSTREAM_URL` | The OpenAI-compatible API being fronted |
 | `MODEL` | The one model this endpoint answers with. Whatever the app sends is discarded |
+| `UPSTREAM_URL` | Base URL of the API being fronted, without a trailing slash |
 | `DAILY_LIMIT` | Requests per IP per day |
 | `MAX_BODY_BYTES` | Request size cap (default 12 MB) |
 
