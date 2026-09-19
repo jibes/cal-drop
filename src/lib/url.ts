@@ -8,6 +8,7 @@ import type { Settings } from './types';
  */
 export async function fetchPageText(url: string, settings: Settings): Promise<string> {
   const target = url.trim();
+  if (!endpoint) throw new Error('This build has no endpoint configured, so links cannot be read.');
   if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
   const res = await fetch(`${endpoint}/fetch`, {

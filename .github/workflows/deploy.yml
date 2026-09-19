@@ -24,11 +24,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build
+        # An unset repository variable arrives as an empty string, and an empty
+        # VITE_PROXY_URL overrides the committed default with nothing — which
+        # ships an app with no endpoint. Only export a value that is really set.
+        run: |
+          if [ -n "$ENDPOINT_OVERRIDE" ]; then
+            export VITE_PROXY_URL="$ENDPOINT_OVERRIDE"
+          fi
+          npm run build
         env:
           # Optional override of the endpoint committed in .env.production.
           # A URL, not a secret — it is inlined into the public bundle either way.
-          VITE_PROXY_URL: ${{ vars.VITE_PROXY_URL }}
+          ENDPOINT_OVERRIDE: ${{ vars.VITE_PROXY_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

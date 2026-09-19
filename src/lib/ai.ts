@@ -75,6 +75,10 @@ export interface ExtractOptions {
   onProgress?: (preview: { title: string; date: string }) => void;
 }
 
+const NO_ENDPOINT =
+  'This build has no endpoint configured, so there is nothing for it to call. ' +
+  'VITE_PROXY_URL was empty when it was built.';
+
 const chatUrl = () =>
   endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
 
@@ -86,6 +90,7 @@ const chatUrl = () =>
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
 function describeNetworkFailure(): string {
+  if (!endpoint) return NO_ENDPOINT;
   let host = endpoint;
   try {
     host = new URL(chatUrl()).host;
@@ -238,6 +243,8 @@ async function callModel(
   useTools: boolean,
   options: ExtractOptions,
 ): Promise<string> {
+  if (!endpoint) throw new Error(NO_ENDPOINT);
+
   const code = settings.accessCode.trim();
   let res: Response;
   try {
