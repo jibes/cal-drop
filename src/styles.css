@@ -158,6 +158,22 @@ details textarea { margin: 10px 0; }
 .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
 .hint.build { margin-top: 18px; font-size: 11px; opacity: 0.7; }
 
+.diagnose { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+.report {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+
 .status, .error {
   margin-top: 16px;
   padding: 10px 14px;

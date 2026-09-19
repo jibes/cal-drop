@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { diagnose } from '../lib/diagnose';
 import { endpointHost, resetSettings } from '../lib/settings';
 import type { Settings } from '../lib/types';
 
@@ -11,6 +12,18 @@ interface Props {
 export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [code, setCode] = useState(settings.accessCode);
   const [show, setShow] = useState(false);
+  const [report, setReport] = useState('');
+  const [testing, setTesting] = useState(false);
+
+  const runTest = async () => {
+    setTesting(true);
+    setReport('Testing…');
+    try {
+      await diagnose({ accessCode: code }, setReport);
+    } finally {
+      setTesting(false);
+    }
+  };
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -39,6 +52,23 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           Stays on this device. Everything else — which model reads your posters, and who
           pays for it — is set by whoever runs {endpointHost()}.
         </p>
+
+        <div className="diagnose">
+          <button className="ghost small" onClick={runTest} disabled={testing}>
+            {testing ? 'Testing endpoint…' : 'Test endpoint'}
+          </button>
+          {report && (
+            <>
+              <pre className="report">{report}</pre>
+              <button
+                className="ghost small"
+                onClick={() => void navigator.clipboard?.writeText(report)}
+              >
+                Copy report
+              </button>
+            </>
+          )}
+        </div>
 
         <p className="hint build">Build {__BUILD__} UTC</p>
 
