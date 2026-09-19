@@ -57,7 +57,7 @@ export function resetSettings(): Settings {
 }
 
 export function usingSharedEndpoint(s: Settings): boolean {
-  return Boolean(sharedEndpoint) && s.baseUrl.trim() === sharedEndpoint && !s.apiKey.trim();
+  return Boolean(sharedEndpoint) && s.baseUrl.trim() === sharedEndpoint;
 }
 
 export function isConfigured(s: Settings): boolean {

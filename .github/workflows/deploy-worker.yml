@@ -35,14 +35,33 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           UPSTREAM_API_KEY: ${{ secrets.UPSTREAM_API_KEY }}
 
-      - name: Deploy
-        id: deploy
+      # Two variants because the secret list is fixed at call time, and
+      # uploading an empty ACCESS_CODE would lock everyone out rather than
+      # leaving the endpoint open.
+      - name: Deploy (with access code)
+        id: deploy_coded
+        if: ${{ secrets.ACCESS_CODE != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: worker
-          # Uploaded as a Worker secret, so the key lives only on Cloudflare.
+          # Uploaded as Worker secrets, so they live only on Cloudflare.
+          secrets: |
+            OPENAI_API_KEY
+            ACCESS_CODE
+        env:
+          OPENAI_API_KEY: ${{ secrets.UPSTREAM_API_KEY }}
+          ACCESS_CODE: ${{ secrets.ACCESS_CODE }}
+
+      - name: Deploy (open)
+        id: deploy_open
+        if: ${{ secrets.ACCESS_CODE == '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
           secrets: |
             OPENAI_API_KEY
         env:
@@ -61,6 +80,14 @@ jobs:
             echo '```'
             echo
             echo "Then run the *Deploy to GitHub Pages* workflow so the site picks it up."
+            echo
+            if [ -n "$HAS_CODE" ]; then
+              echo "An access code is set: each user must enter it as the API key in Settings."
+            else
+              echo "No ACCESS_CODE secret is set, so anyone with this URL can spend your credits."
+              echo "Add one as a repository secret and re-run to lock it down."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
         env:
-          DEPLOY_OUTPUT: ${{ steps.deploy.outputs.command-output }}
+          DEPLOY_OUTPUT: ${{ steps.deploy_coded.outputs.command-output || steps.deploy_open.outputs.command-output }}
+          HAS_CODE: ${{ secrets.ACCESS_CODE }}

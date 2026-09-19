@@ -9,10 +9,28 @@ export interface IncomingShare {
 /** Register the worker that makes CalDrop an install target and a share target. */
 export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
+
+  // A worker that claims the page mid-session leaves the old bundle running,
+  // so a deploy would not reach anyone until they cleared their cache by hand.
+  // Reload once when a NEW worker takes over — not on the first registration,
+  // where claiming is expected and there is nothing stale to replace.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register(new URL('sw.js', document.baseURI), {
-      scope: new URL('./', document.baseURI).pathname,
-    });
+    void navigator.serviceWorker
+      .register(new URL('sw.js', document.baseURI), {
+        scope: new URL('./', document.baseURI).pathname,
+      })
+      .then((registration) => registration.update())
+      .catch(() => {
+        /* no service worker is survivable; the app still works online */
+      });
   });
 }
 

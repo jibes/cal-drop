@@ -156,6 +156,7 @@ details textarea { margin: 10px 0; }
 
 .muted { color: var(--muted); font-size: 13px; }
 .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+.hint.build { margin-top: 18px; font-size: 11px; opacity: 0.7; }
 
 .status, .error {
   margin-top: 16px;

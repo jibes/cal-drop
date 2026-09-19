@@ -23,6 +23,7 @@ Settings → Secrets and variables → Actions → Secrets:
 | `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → the ID in the right-hand sidebar (also in the dashboard URL) |
 | `UPSTREAM_API_KEY` | The upstream API key. The workflow uploads it as the Worker secret `OPENAI_API_KEY`; it is never written into `wrangler.toml` or the site bundle |
+| `ACCESS_CODE` | **Optional.** A shared code callers must present. Without it, anyone who finds the endpoint URL can spend your credits |
 
 Then Actions → *Deploy shared endpoint* → **Run workflow**. The run summary
 prints the endpoint URL to use for `VITE_PROXY_URL`.
@@ -52,6 +53,28 @@ CALDROP_API_KEY=anything \
 CALDROP_MODEL=gemma-4-31b \
 npm run probe
 ```
+
+## Keeping other people off your credits
+
+A `workers.dev` URL is public, and the site that calls it is public too. Two
+things guard it, and they guard different attackers:
+
+- **Origin.** A browser on any origin other than `ALLOWED_ORIGINS` is refused
+  with 403. This stops another web page from using your endpoint, but it is not
+  a defence against anything that is not a browser, since a script sets whatever
+  Origin it likes — or none.
+- **`ACCESS_CODE`.** A shared secret callers must send as a bearer token, held
+  as a Worker secret and compared in constant time. This is the one that
+  actually limits who can spend your credits.
+
+The code cannot be baked into the site: everything in the bundle is readable by
+anyone who opens devtools. So each person enters it once in Settings, in the
+API key field, and it stays in their browser's storage. Tell it to the people
+you want to have it; rotate it by changing the secret and re-running the deploy.
+
+Without `ACCESS_CODE` set, the endpoint is open to anyone who learns the URL,
+and the only limit is `DAILY_LIMIT` per IP — which an attacker with several
+addresses walks straight past.
 
 ## Configuration
 

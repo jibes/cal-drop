@@ -40,15 +40,15 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
         {sharedEndpoint && !onShared && (
           <button
             className="ghost small"
-            onClick={() => setDraft((d) => ({ ...d, baseUrl: sharedEndpoint, apiKey: '' }))}
+            onClick={() => setDraft((d) => ({ ...d, baseUrl: sharedEndpoint }))}
           >
-            Use the shared endpoint (no key needed)
+            Use the shared endpoint
           </button>
         )}
         {onShared && (
           <p className="hint">
-            Using the shared endpoint — no key needed, but it is rate limited. Add your own
-            key to lift that.
+            Using the shared endpoint. It is rate limited, and if its operator set an access
+            code you need to enter that below. Your own API key works here too.
           </p>
         )}
 
@@ -63,7 +63,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
         </label>
 
         <label>
-          API key
+          {onShared ? 'Access code or API key' : 'API key'}
           <span className="row">
             <input
               type={showKey ? 'text' : 'password'}
@@ -107,6 +107,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             autoComplete="off"
           />
         </label>
+
+        <p className="hint build">Build {__BUILD__} UTC</p>
 
         <div className="sheet-actions">
           <button

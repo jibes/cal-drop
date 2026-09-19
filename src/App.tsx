@@ -170,7 +170,7 @@ export default function App() {
 
       <footer className="foot">
         {usingSharedEndpoint(settings)
-          ? 'Using the shared demo endpoint. Add your own key in Settings for no rate limit.'
+          ? 'Using the shared endpoint. Add your own key in Settings for no rate limit.'
           : 'Runs in your browser. Your key never leaves this device except to call your own endpoint.'}
       </footer>
 

@@ -26,8 +26,27 @@ const settings = (env) => ({
     .filter(Boolean),
 });
 
+const originList = (allowed) =>
+  String(allowed || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+function originAllowed(origin, allowed) {
+  if (!allowed || allowed === '*') return true;
+  return originList(allowed).includes(origin);
+}
+
+/** Compare without leaking the answer through how long it took. */
+function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function cors(origin, allowed) {
-  const ok = !allowed || allowed === '*' || allowed.split(',').includes(origin);
+  const ok = originAllowed(origin, allowed) && origin !== '';
   return {
     'Access-Control-Allow-Origin': ok ? origin || '*' : 'null',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -74,6 +93,28 @@ export default {
     const url = new URL(request.url);
     if (!url.pathname.endsWith('/chat/completions')) {
       return json(404, { error: 'Not found' }, headers);
+    }
+
+    // A browser that is not one of ours is turned away outright. A request with
+    // no Origin at all is not a browser, so it is left to the access code below.
+    if (origin && !originAllowed(origin, env.ALLOWED_ORIGINS)) {
+      return json(403, { error: 'This endpoint does not serve that origin.' }, headers);
+    }
+
+    /**
+     * Optional shared secret. The site is public, so anything baked into its
+     * bundle is public too — this has to be something the user types once and
+     * that lives only on their device, or it protects nothing.
+     */
+    if (env.ACCESS_CODE) {
+      const presented = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+      if (!sameSecret(presented, env.ACCESS_CODE)) {
+        return json(
+          401,
+          { error: 'This shared endpoint needs an access code. Enter it as the API key in Settings.' },
+          headers,
+        );
+      }
     }
 
     const config = settings(env);
