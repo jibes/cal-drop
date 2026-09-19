@@ -78,12 +78,29 @@ export default {
 
     const config = settings(env);
 
-    const length = Number(request.headers.get('Content-Length') || '0');
-    if (length > config.maxBodyBytes) return json(413, { error: 'Payload too large' }, headers);
+    if (!env.OPENAI_API_KEY) {
+      // Without this the upstream just answers 401 and the app reports a key
+      // problem the user cannot fix, because the key is not theirs.
+      return json(
+        500,
+        { error: 'This endpoint is missing its upstream key. Its operator must set the OPENAI_API_KEY secret.' },
+        headers,
+      );
+    }
+
+    // Content-Length is absent on a chunked upload, so it can only be a fast
+    // reject — the real cap has to be measured on the body actually received.
+    const declared = Number(request.headers.get('Content-Length') || '0');
+    if (declared > config.maxBodyBytes) return json(413, { error: 'Payload too large' }, headers);
+
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).length > config.maxBodyBytes) {
+      return json(413, { error: 'Payload too large' }, headers);
+    }
 
     let body;
     try {
-      body = await request.json();
+      body = JSON.parse(raw);
     } catch {
       return json(400, { error: 'Invalid JSON' }, headers);
     }
@@ -94,10 +111,15 @@ export default {
 
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     if (await overQuota(env, ip, config.dailyLimit)) {
+      const untilMidnightUtc = Math.ceil(
+        (Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1) -
+          Date.now()) /
+          1000,
+      );
       return json(
         429,
         { error: 'Daily limit for the shared endpoint reached. Add your own API key in Settings.' },
-        headers,
+        { ...headers, 'Retry-After': String(untilMidnightUtc) },
       );
     }
 
