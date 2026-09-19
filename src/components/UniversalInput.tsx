@@ -28,9 +28,9 @@ export function UniversalInput({ onFiles, onText, busy, preview }: Props) {
     return () => window.removeEventListener('paste', onPaste);
   }, [onFiles]);
 
-  const submit = () => {
-    if (!value.trim()) return;
-    onText(value);
+  const submit = (text = value) => {
+    if (!text.trim()) return;
+    onText(text);
     setValue('');
   };
 
@@ -55,8 +55,16 @@ export function UniversalInput({ onFiles, onText, busy, preview }: Props) {
         className="universal"
         rows={2}
         value={value}
-        placeholder="Paste a link or any text — or drop a photo or PDF here"
+        placeholder="…or paste a link or text"
         onChange={(e) => setValue(e.target.value)}
+        onPaste={(e) => {
+          // You paste in order to have it read. Asking for a second tap to
+          // confirm that is a step with no decision in it.
+          const text = e.clipboardData.getData('text');
+          if (!text.trim()) return; // an image paste is handled globally
+          e.preventDefault();
+          submit(text);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
             e.preventDefault();
@@ -66,8 +74,10 @@ export function UniversalInput({ onFiles, onText, busy, preview }: Props) {
       />
 
       <div className="drop-actions">
-        <label className="button" title="Take a photo">
-          📷 Photo
+        {/* Pointing a camera at a poster is what this app is for, so it is the
+            one control that gets the weight. */}
+        <label className="primary button" title="Take a photo of a poster">
+          📷 Camera
           <input
             type="file"
             accept="image/*"
@@ -76,8 +86,8 @@ export function UniversalInput({ onFiles, onText, busy, preview }: Props) {
             onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
           />
         </label>
-        <label className="button" title="Choose a file">
-          📎 File
+        <label className="button" title="Choose a photo or PDF already on this device">
+          Choose file
           <input
             type="file"
             accept="image/*,application/pdf"
@@ -86,9 +96,13 @@ export function UniversalInput({ onFiles, onText, busy, preview }: Props) {
             onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
           />
         </label>
-        <button className="primary" onClick={submit} disabled={busy || !value.trim()}>
-          Read it
-        </button>
+        {/* Only typed text needs a submit: a pick runs on selection and a paste
+            runs on paste, so a permanent button here would be dead most of the time. */}
+        {value.trim() && (
+          <button onClick={() => submit()} disabled={busy}>
+            Read it
+          </button>
+        )}
       </div>
     </section>
   );

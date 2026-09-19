@@ -223,16 +223,24 @@ export default {
       return json(result.error ? 400 : 200, result, headers);
     }
 
-    const upstream = await fetch(`${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      // The model is the operator's decision, not the caller's: whatever the
-      // page sent is discarded so there is exactly one answer to "which model".
-      body: JSON.stringify({ ...body, model: config.model }),
-    });
+    let upstream;
+    try {
+      upstream = await fetch(`${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        },
+        // The model is the operator's decision, not the caller's: whatever the
+        // page sent is discarded so there is exactly one answer to "which model".
+        body: JSON.stringify({ ...body, model: config.model }),
+      });
+    } catch {
+      // An uncaught throw here would become a bare 500 with no CORS headers,
+      // which a browser cannot read at all — the page would report that its
+      // request never left, when in fact this endpoint's upstream is down.
+      return json(502, { error: 'The endpoint could not reach the model provider.' }, headers);
+    }
 
     // Streamed straight through, so the app's live preview still works.
     return new Response(upstream.body, {
