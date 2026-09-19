@@ -145,6 +145,12 @@ function readOutcome(status: number, raw: string): string {
   return events.length > 0 ? 'ok (streamed)' : 'ok';
 }
 
+/** The models worth asking, by the names providers give vision models. */
+function visionCandidates(models: string[]): string[] {
+  const likely = models.filter((id) => /(^|[-.])vl([-.]|$)|vision|pixtral|gemma-[34]|glm-5|qwen-image/i.test(id));
+  return likely.slice(0, 6);
+}
+
 export async function diagnose(settings: Settings, onLine: (line: string) => void): Promise<string> {
   const lines: string[] = [
     `CalDrop endpoint report — ${new Date().toISOString()}`,
@@ -165,14 +171,16 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   const code = settings.accessCode.trim();
   const auth: Record<string, string> = code ? { Authorization: `Bearer ${code}` } : {};
+  let models: string[] = [];
+  let imagesFailed = false;
 
   // Which models exist is the question a failed image probe leads to, so
   // answer it in the same report rather than in a second round trip.
   try {
     const res = await fetch(`${endpoint.replace(/\/+$/, '')}/models`, { headers: auth });
     const body = (await res.json()) as { data?: { id?: string }[] };
-    const ids = (body.data ?? []).map((m) => m.id).filter(Boolean);
-    emit(ids.length ? `models   ${ids.join(', ')}` : `models   (none listed, HTTP ${res.status})`);
+    models = (body.data ?? []).map((m) => m.id).filter((id): id is string => Boolean(id));
+    emit(models.length ? `models   ${models.join(', ')}` : `models   (none listed, HTTP ${res.status})`);
   } catch (err) {
     emit(`models   could not be listed: ${(err as Error).message}`);
   }
@@ -189,10 +197,46 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     } catch (err) {
       outcome = `could not reach the endpoint: ${(err as Error).message}`;
     }
+    if (probe.name.startsWith('image:') && !outcome.startsWith('ok')) imagesFailed = true;
     emit(`${probe.name.padEnd(32)} ${outcome}`);
   }
 
   emit('');
   emit('A probe that fails while "minimal" succeeds names the feature to drop.');
+
+  // Knowing that pictures are refused is only half an answer; the other half
+  // is which of this provider's models would accept one.
+  if (imagesFailed) {
+    emit('');
+    emit('Images were refused, so trying the models most likely to accept one:');
+    for (const model of visionCandidates(models)) {
+      let outcome: string;
+      try {
+        const res = await fetch(`${endpoint.replace(/\/+$/, '')}/probe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...auth },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: LOOK },
+                  { type: 'image_url', image_url: { url: DATA_URL } },
+                ],
+              },
+            ],
+          }),
+        });
+        outcome = readOutcome(res.status, await res.text());
+      } catch (err) {
+        outcome = `could not reach the endpoint: ${(err as Error).message}`;
+      }
+      emit(`  ${model.padEnd(30)} ${outcome}`);
+    }
+    emit('');
+    emit('Put a model that reports ok into VISION_MODEL in worker/wrangler.toml.');
+  }
+
   return lines.join('\n');
 }

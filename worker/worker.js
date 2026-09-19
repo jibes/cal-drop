@@ -224,7 +224,8 @@ export default {
     const isChat = requestUrl.pathname.endsWith('/chat/completions');
     const isFetch = requestUrl.pathname.endsWith('/fetch');
     const isModels = requestUrl.pathname.endsWith('/models');
-    if (!isChat && !isFetch && !isModels) return json(404, { error: 'Not found' }, headers);
+    const isProbe = requestUrl.pathname.endsWith('/probe');
+    if (!isChat && !isFetch && !isModels && !isProbe) return json(404, { error: 'Not found' }, headers);
     if (!isModels && request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
 
     const config = settings(env);
@@ -286,6 +287,37 @@ export default {
         { error: 'Daily limit reached. It resets at midnight UTC.' },
         { ...headers, 'Retry-After': String(untilMidnightUtc) },
       );
+    }
+
+    /**
+     * Try one named model, for finding out which of a provider's models can do
+     * something — reading a picture, say. This is the one place a caller names
+     * a model, which is safe because it is behind the access code, capped to a
+     * few tokens and counted against the same quota: enough to learn whether a
+     * request is accepted, not enough to be worth abusing.
+     */
+    if (isProbe) {
+      const wanted = String(body.model || '').trim();
+      if (!wanted) return json(400, { error: 'probe needs a model' }, headers);
+      try {
+        const { res: tried } = await callUpstream(
+          `${env.UPSTREAM_URL || 'https://api.openai.com/v1'}/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({ ...body, model: wanted, stream: false, max_tokens: 16 }),
+          },
+        );
+        return new Response(await tried.text(), {
+          status: tried.status,
+          headers: { ...headers, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        });
+      } catch {
+        return json(502, { error: 'The endpoint could not reach the model provider.' }, headers);
+      }
     }
 
     if (isFetch) {

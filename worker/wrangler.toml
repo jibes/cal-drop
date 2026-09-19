@@ -14,8 +14,9 @@ UPSTREAM_URL = "https://api.melious.ai/v1"
 MODEL = "gemma-4-31b"
 
 # Used only for requests that attach a picture. Leave unset to use MODEL for
-# everything; set it when MODEL cannot read images, as gemma-4-31b cannot.
-# VISION_MODEL = "
+# everything. gemma-4-31b is documented as multimodal but this API refuses
+# every image encoding for it, so photos are routed to a model that works.
+VISION_MODEL = "qwen2.5-vl-72b-instruct"
 
 # Per-IP requests per day.
 DAILY_LIMIT = "20"
