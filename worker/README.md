@@ -23,9 +23,12 @@ It serves these routes:
   third party sees the links. Only http(s) is followed, private and
   link-local addresses are refused, and the response is capped.
 - `GET /v1/ics?c=…` — serves a calendar file as `text/calendar` over https,
-  which is what makes a phone offer to open it in a calendar app. A blob URL
-  with a download attribute does not: it produces a file in Downloads that
-  nothing volunteers to handle. The event travels in the URL and is not
+  **inline**, not as an attachment. `Content-Disposition: attachment` is the
+  instruction to download and ask where to save, which is the opposite of what
+  is wanted here. On Android the app links to it through an `intent://` URL, so
+  the OS is asked to *view* a `text/calendar` file and answers with the
+  calendar app; `S.browser_fallback_url` returns to the plain link if nothing
+  handles it. The event travels in the URL and is not
   stored, and only something beginning `BEGIN:VCALENDAR` is ever served, so
   this cannot become a way to serve arbitrary content from this origin.
   Public by necessity — the calendar app follows the link with no headers.

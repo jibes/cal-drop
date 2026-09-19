@@ -228,7 +228,9 @@ export default {
       return new Response(text, {
         headers: {
           'Content-Type': 'text/calendar; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${name || 'event'}.ics"`,
+          // Not "attachment": that is the instruction to download and ask where
+          // to save. Inline lets a browser hand the file to whatever opens it.
+          'Content-Disposition': `inline; filename="${name || 'event'}.ics"`,
           'Cache-Control': 'no-store',
           ...headers,
         },

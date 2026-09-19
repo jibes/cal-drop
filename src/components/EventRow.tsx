@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
 import { describeRrule, formatWhen } from '../lib/format';
-import { downloadIcs, icsLink } from '../lib/ics';
+import { downloadIcs, icsOpenLink } from '../lib/ics';
 import type { EventDraft } from '../lib/types';
 
 interface Props {
@@ -28,8 +28,8 @@ function needsAttention(event: EventDraft): boolean {
  * download otherwise.
  */
 export function CalendarFile({ events }: { events: EventDraft[] }) {
-  const href = icsLink(events);
-  const label = events.length > 1 ? `Calendar file (${events.length})` : 'Calendar file';
+  const href = icsOpenLink(events);
+  const label = events.length > 1 ? `Open in calendar (${events.length})` : 'Open in calendar';
   return href ? (
     <a className="button" href={href}>
       {label}
