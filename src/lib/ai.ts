@@ -194,20 +194,41 @@ interface StreamDelta {
 }
 
 /** Read an SSE stream, accumulating whichever channel the model chose to answer on. */
+/**
+ * Pull the answer out of a whole, non-streamed completion. Plenty of
+ * OpenAI-compatible servers accept `stream: true` and answer with an ordinary
+ * JSON body anyway, which an SSE reader skips entirely and reports as nothing.
+ */
+function fromCompletion(raw: string): string {
+  try {
+    const message = (
+      JSON.parse(raw) as {
+        choices?: { message?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[];
+      }
+    ).choices?.[0]?.message;
+    return message?.tool_calls?.[0]?.function?.arguments ?? message?.content ?? '';
+  } catch {
+    return '';
+  }
+}
+
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onProgress?: ExtractOptions['onProgress'],
-): Promise<string> {
+): Promise<{ text: string; raw: string }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let raw = '';
   let out = '';
   let lastPreview = '';
 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    const chunk = decoder.decode(value, { stream: true });
+    raw += chunk;
+    buffer += chunk;
 
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
@@ -234,7 +255,8 @@ async function readStream(
       }
     }
   }
-  return out;
+  // An answer that never streamed is still an answer.
+  return { text: out.trim() ? out : fromCompletion(raw), raw };
 }
 
 async function callModel(
@@ -304,10 +326,21 @@ async function callModel(
     throw new Error(message || `API error ${res.status}: ${detail || res.statusText}`);
   }
 
-  if (!res.body) throw new Error('The API returned an empty response.');
-  const text = await readStream(res.body, options.onProgress);
-  if (!text.trim()) throw new Error('The API returned an empty response.');
-  return text;
+  if (!res.body) throw new Error('The endpoint returned no response body.');
+
+  const { text, raw } = await readStream(res.body, options.onProgress);
+  if (text.trim()) return text;
+
+  // A server that ignores `tools` rather than refusing them answers 200 with
+  // nothing useful, so the plain-JSON retry has to cover that case too — a
+  // status-code check alone never sees it.
+  if (useTools) return callModel(content, settings, false, options);
+
+  throw new Error(
+    raw.trim()
+      ? `The endpoint answered, but with nothing this app could read: ${raw.trim().slice(0, 200)}`
+      : 'The endpoint answered with an empty body.',
+  );
 }
 
 async function runPass(
