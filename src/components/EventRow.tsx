@@ -1,10 +1,5 @@
 import { useState } from 'react';
-import {
-  androidCalendarIntent,
-  deeplinkCaveat,
-  googleCalendarUrl,
-  outlookCalendarUrl,
-} from '../lib/calendar';
+import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
 import { describeRrule, formatWhen } from '../lib/format';
 import { downloadIcs, icsLink } from '../lib/ics';
 import type { EventDraft } from '../lib/types';
@@ -27,20 +22,18 @@ function needsAttention(event: EventDraft): boolean {
   return event.confidence < 0.6 || Boolean(event.notes);
 }
 
-const onAndroid = () => /android/i.test(navigator.userAgent);
-
 /**
- * Into whichever calendar the person actually keeps.
+ * The calendar file, served over https so the device decides what opens it.
  *
- * On Android that is an insert-event intent, which only calendar apps answer.
- * Elsewhere it is the calendar file served inline over https, which iOS
- * recognises and offers to add. With no endpoint to serve that, the file is
- * downloaded instead.
+ * There is no way for a web page to put an event straight into a calendar app
+ * on Android: Chromium adds CATEGORY_BROWSABLE to any intent a page launches,
+ * and a calendar's insert filter does not declare it, so such an intent
+ * matches nothing. The file is the only handover the browser is allowed to
+ * make, and which app receives it is the device's default to set.
  */
 export function CalendarFile({ events }: { events: EventDraft[] }) {
-  const label = events.length > 1 ? `Open in calendar (${events.length})` : 'Open in calendar';
-  // An insert intent carries one event; several of them are a file.
-  const href = onAndroid() && events.length === 1 ? androidCalendarIntent(events[0]) : icsLink(events);
+  const label = events.length > 1 ? `Calendar file (${events.length})` : 'Calendar file';
+  const href = icsLink(events);
   return href ? (
     <a className="button" href={href}>
       {label}
@@ -90,9 +83,6 @@ export function EventRow({ event, onChange, onRemove }: Props) {
       <div className="card-actions secondary">
         <button className="ghost small" onClick={() => setOpen((v) => !v)}>
           {open ? 'Done' : 'Edit'}
-        </button>
-        <button className="ghost small" onClick={() => downloadIcs([event])}>
-          .ics file
         </button>
         <button className="ghost small" onClick={onRemove}>
           Discard

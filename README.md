@@ -30,11 +30,15 @@ paste / drop ───┘                                │                    
 
 - **One input** takes all of it: paste, drop, type, shoot, or share. Whether
   something is a link, plain text, an image or a PDF is the app's problem.
-- **Adding to the calendar is one tap**, into whichever calendar you keep.
-  On Android that is an insert-event intent, which only calendar apps answer;
-  on iOS the calendar file is served inline over https, which Safari offers to
-  add. Google and Outlook are offered as equal alternatives, and the `.ics`
-  file is there for everything else.
+- **Three ways into a calendar, none of them preferred**: the calendar file
+  served inline over https, a Google deep link and an Outlook one.
+
+  A web page cannot put an event straight into a phone's calendar app on
+  Android. Chromium adds `CATEGORY_BROWSABLE` to any intent a page launches,
+  and a calendar app's `ACTION_INSERT` filter does not declare it, so such an
+  intent matches nothing at all. The file is the only handover a browser is
+  permitted to make, and which app receives it is the device's default. A
+  native build has no such limit — that is one of the things it buys.
 - **Verification is a glance, not a re-read.** Every event shows the verbatim
   words the date was read from — *read from "Sa 12.09. — Beginn 20 Uhr"* — so
   checking it against the poster takes a second.

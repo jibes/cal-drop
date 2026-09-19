@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { calendarHandoffVariants } from '../lib/calendar';
 import { diagnose } from '../lib/diagnose';
 import { endpointHost, resetSettings } from '../lib/settings';
 import type { Settings } from '../lib/types';
@@ -9,25 +8,6 @@ interface Props {
   onSave: (settings: Settings) => void;
   onClose: () => void;
 }
-
-/** A throwaway event, so the handoff can be tried without extracting one. */
-const SAMPLE = {
-  id: 'handoff',
-  title: 'CalDrop test event',
-  startDate: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-  startTime: '20:00',
-  endDate: '',
-  endTime: '',
-  allDay: false,
-  location: 'Kulturzentrum, Berlin',
-  timezone: '',
-  rrule: '',
-  description: '',
-  url: '',
-  sourceText: '',
-  confidence: 1,
-  notes: '',
-};
 
 export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [code, setCode] = useState(settings.accessCode);
@@ -90,20 +70,14 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           )}
         </div>
 
-        {/* Which of these a device honours cannot be worked out from here. */}
-        <div className="diagnose">
+        {/* People hit this and reasonably assume the app chose the wrong app. */}
+        {/android/i.test(navigator.userAgent) && (
           <p className="hint">
-            Calendar handoff — tap each and tell me which opens your calendar app rather
-            than an .ics importer:
+            A calendar file opens in whichever app Android has as the default for it — an
+            .ics importer, if one is installed. To change it: Android settings → Apps →
+            that app → Open by default → Clear defaults, then pick your calendar next time.
           </p>
-          <div className="variants">
-            {calendarHandoffVariants(SAMPLE).map((variant) => (
-              <a className="button small" key={variant.label} href={variant.href}>
-                {variant.label}
-              </a>
-            ))}
-          </div>
-        </div>
+        )}
 
         <p className="hint build">Build {__BUILD__} UTC</p>
 
