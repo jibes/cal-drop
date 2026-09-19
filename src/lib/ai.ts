@@ -70,18 +70,51 @@ type ContentPart =
   | { type: 'image_url'; image_url: { url: string } };
 
 /**
- * How to ask for structured output, most reliable first. Servers differ on
- * what they support and on how they refuse: some answer 400, some answer 200
- * with an error event, some accept the parameter and quietly ignore it. So
- * each rung is tried in turn rather than chosen from a status code.
+ * How to ask, most capable first, each rung giving up one thing the previous
+ * one assumed. Servers differ on what they accept and on how they refuse:
+ * some answer 400, some answer 200 with an error event, some accept a
+ * parameter and quietly ignore it. None of that is visible in advance, so the
+ * ladder is walked rather than chosen.
+ *
+ * The last rung is the barest request the API allows — no tools, no
+ * response_format, no system role, not even a temperature — because some
+ * models have no system turn at all (Gemma's template is user/model only) and
+ * strict servers reject one as malformed.
  */
-type AskMode = 'tools' | 'json' | 'plain';
+interface Rung {
+  structured: 'tools' | 'json' | 'none';
+  /** 'role' sends a system message; 'merged' folds it into the user turn. */
+  system: 'role' | 'merged';
+  temperature: boolean;
+}
 
-const NEXT_MODE: Record<AskMode, AskMode | null> = {
-  tools: 'json',
-  json: 'plain',
-  plain: null,
-};
+const LADDER: Rung[] = [
+  { structured: 'tools', system: 'role', temperature: true },
+  { structured: 'json', system: 'role', temperature: true },
+  { structured: 'none', system: 'role', temperature: true },
+  { structured: 'none', system: 'merged', temperature: false },
+];
+
+const MODE_KEY = 'caldrop.endpointMode.v1';
+
+/** The endpoint's quirks do not change between requests, so pay for finding
+ *  them once and start there next time. */
+function rememberedRung(): number {
+  try {
+    const i = Number(localStorage.getItem(MODE_KEY));
+    return Number.isInteger(i) && i >= 0 && i < LADDER.length ? i : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function rememberRung(i: number): void {
+  try {
+    localStorage.setItem(MODE_KEY, String(i));
+  } catch {
+    /* storage disabled; we just re-learn each time */
+  }
+}
 
 export interface ExtractOptions {
   signal?: AbortSignal;
@@ -284,12 +317,28 @@ async function readStream(
   return { text: out.trim() ? out : fromCompletion(raw), raw, error };
 }
 
+function messagesFor(rung: Rung, content: string | ContentPart[]) {
+  if (rung.system === 'role') {
+    return [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content },
+    ];
+  }
+  // No system turn: the instructions lead the user message instead.
+  const merged =
+    typeof content === 'string'
+      ? `${SYSTEM_PROMPT}\n\n---\n\n${content}`
+      : [{ type: 'text' as const, text: SYSTEM_PROMPT }, ...content];
+  return [{ role: 'user', content: merged }];
+}
+
 async function callModel(
   content: string | ContentPart[],
   settings: Settings,
-  mode: AskMode,
+  attempt: number,
   options: ExtractOptions,
 ): Promise<string> {
+  const rung = LADDER[attempt];
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -304,13 +353,10 @@ async function callModel(
       },
       body: JSON.stringify({
         // No model: the endpoint decides which one answers.
-        temperature: 0,
         stream: true,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content },
-        ],
-        ...(mode === 'tools'
+        messages: messagesFor(rung, content),
+        ...(rung.temperature ? { temperature: 0 } : {}),
+        ...(rung.structured === 'tools'
           ? {
               tools: [
                 {
@@ -324,7 +370,7 @@ async function callModel(
               ],
               tool_choice: { type: 'function', function: { name: 'save_events' } },
             }
-          : mode === 'json'
+          : rung.structured === 'json'
             ? { response_format: { type: 'json_object' } }
             : {}),
       }),
@@ -347,9 +393,8 @@ async function callModel(
     }
     if (res.status === 429 || res.status === 500) throw new Error(message || `HTTP ${res.status}`);
     // Not every OpenAI-compatible server implements tool calling; fall back once.
-    const simpler = NEXT_MODE[mode];
-    if (simpler && (res.status === 400 || res.status === 404 || res.status === 422)) {
-      return callModel(content, settings, simpler, options);
+    if (attempt + 1 < LADDER.length && (res.status === 400 || res.status === 404 || res.status === 422)) {
+      return callModel(content, settings, attempt + 1, options);
     }
     throw new Error(message || `API error ${res.status}: ${detail || res.statusText}`);
   }
@@ -357,13 +402,15 @@ async function callModel(
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
   const { text, raw, error } = await readStream(res.body, options.onProgress);
-  if (text.trim()) return text;
+  if (text.trim()) {
+    rememberRung(attempt);
+    return text;
+  }
 
   // Nothing usable came back. That covers a refusal delivered as an event and
   // a server that accepts a parameter then ignores it — neither shows up in
-  // the status — so drop to a simpler way of asking and try again.
-  const simpler = NEXT_MODE[mode];
-  if (simpler) return callModel(content, settings, simpler, options);
+  // the status — so give up one more assumption and try again.
+  if (attempt + 1 < LADDER.length) return callModel(content, settings, attempt + 1, options);
 
   throw new Error(
     error
@@ -380,7 +427,7 @@ async function runPass(
   withImages: boolean,
   options: ExtractOptions,
 ): Promise<EventDraft[]> {
-  const raw = await callModel(buildUserContent(source, withImages), settings, 'tools', options);
+  const raw = await callModel(buildUserContent(source, withImages), settings, rememberedRung(), options);
   const parsed = parseJson(raw);
   const events = Array.isArray(parsed.events) ? parsed.events : [];
   return events.map(toDraft).filter((e) => e.startDate);
