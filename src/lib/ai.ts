@@ -2,7 +2,7 @@ import { endpoint } from './settings';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
 
-const SYSTEM_PROMPT = `You extract calendar events from event posters, flyers, screenshots, PDFs and web pages.
+export const SYSTEM_PROMPT = `You extract calendar events from event posters, flyers, screenshots, PDFs and web pages.
 
 Rules:
 - Return ONLY events that actually take place, with a concrete date. Ignore printing dates, ticket-sale dates, imprint/copyright years and a venue's general opening hours.

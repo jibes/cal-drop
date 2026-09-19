@@ -34,6 +34,10 @@ It serves these routes:
   Public by necessity — the calendar app follows the link with no headers.
 - `GET /v1/models` and `POST /v1/probe` — what the provider offers, and
   whether a named model accepts a given request. See below.
+- `GET /v1/pricing` — the models in use and their configured prices, so the
+  endpoint report can turn measured token counts into money. Prices are
+  config, not something the endpoint discovers: they change nothing about
+  what is sent or charged.
 
 ## Deploy without a terminal (phone-friendly)
 
@@ -144,6 +148,8 @@ mean touching code:
 | `VISION_MODEL` | Optional. Used only for requests carrying a picture; falls back to `MODEL` |
 | `UPSTREAM_URL` | Base URL of the API being fronted, without a trailing slash |
 | `DAILY_LIMIT` | Requests per IP per day |
+| `PRICE_IN` / `PRICE_OUT` | Euros per million tokens for `MODEL` |
+| `PRICE_VISION_IN` / `PRICE_VISION_OUT` | Same for `VISION_MODEL`; falls back to the above |
 | `MAX_BODY_BYTES` | Request size cap (default 12 MB) |
 
 `OPENAI_API_KEY` is a secret, never a var — `wrangler secret put`, not

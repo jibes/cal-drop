@@ -30,6 +30,13 @@ function carriesImage(body) {
 
 const settings = (env) => ({
   model: String(env.MODEL || DEFAULTS.MODEL),
+  // Euros per million tokens, so a report can turn a token count into money.
+  price: {
+    in: Number(env.PRICE_IN || 0),
+    out: Number(env.PRICE_OUT || 0),
+    visionIn: Number(env.PRICE_VISION_IN || env.PRICE_IN || 0),
+    visionOut: Number(env.PRICE_VISION_OUT || env.PRICE_OUT || 0),
+  },
   // Falls back to MODEL, so an endpoint whose model reads images needs no
   // second setting and nothing changes for one that never sees a picture.
   visionModel: String(env.VISION_MODEL || env.MODEL || DEFAULTS.MODEL),
@@ -263,9 +270,14 @@ export default {
     const isChat = requestUrl.pathname.endsWith('/chat/completions');
     const isFetch = requestUrl.pathname.endsWith('/fetch');
     const isModels = requestUrl.pathname.endsWith('/models');
+    const isPricing = requestUrl.pathname.endsWith('/pricing');
     const isProbe = requestUrl.pathname.endsWith('/probe');
-    if (!isChat && !isFetch && !isModels && !isProbe) return json(404, { error: 'Not found' }, headers);
-    if (!isModels && request.method !== 'POST') return json(405, { error: 'POST only' }, headers);
+    if (!isChat && !isFetch && !isModels && !isPricing && !isProbe) {
+      return json(404, { error: 'Not found' }, headers);
+    }
+    if (!isModels && !isPricing && request.method !== 'POST') {
+      return json(405, { error: 'POST only' }, headers);
+    }
 
     const config = settings(env);
 
@@ -275,6 +287,15 @@ export default {
       return json(
         500,
         { error: 'This endpoint is missing its upstream key. Its operator must set the OPENAI_API_KEY secret.' },
+        headers,
+      );
+    }
+
+    // What this endpoint is configured to use, and what it costs to use it.
+    if (isPricing) {
+      return json(
+        200,
+        { model: config.model, visionModel: config.visionModel, currency: 'EUR', perMillionTokens: config.price },
         headers,
       );
     }

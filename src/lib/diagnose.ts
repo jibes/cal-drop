@@ -1,3 +1,4 @@
+import { SYSTEM_PROMPT } from './ai';
 import { endpoint } from './settings';
 import type { Settings } from './types';
 
@@ -157,6 +158,123 @@ function visionCandidates(models: string[]): string[] {
   return models.filter((id) => looksVision.test(id) && !notAReader.test(id)).slice(0, 6);
 }
 
+const SAMPLE_POSTER = `SOMMERFEST IM HOF
+Sa 12.09. — Einlass 19:00, Beginn 20 Uhr
+Kulturzentrum Alte Feuerwache, Berlin
+Eintritt frei
+
+Jeden Dienstag: Jam Session, 21 Uhr, Bar Zwei`;
+
+interface Usage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+}
+
+/**
+ * Token counts, from wherever the answer put them. A server may stream even
+ * when not asked to, in which case the usage rides on one of the events rather
+ * than sitting in a JSON body.
+ */
+function readUsage(raw: string): Usage | undefined {
+  try {
+    const whole = JSON.parse(raw) as { usage?: Usage };
+    if (whole.usage) return whole.usage;
+  } catch {
+    /* not a single JSON body; try it as a stream */
+  }
+  for (const line of raw.split('\n')) {
+    if (!line.trim().startsWith('data:')) continue;
+    try {
+      const event = JSON.parse(line.trim().slice(5).trim()) as { usage?: Usage };
+      if (event.usage?.prompt_tokens) return event.usage;
+    } catch {
+      /* [DONE] and keep-alives are not JSON */
+    }
+  }
+  return undefined;
+}
+
+const money = (euros: number) =>
+  euros >= 0.01 ? `€${euros.toFixed(3)}` : `${(euros * 100).toFixed(4)} cents`;
+
+/**
+ * What a run actually costs, measured rather than estimated: one real
+ * extraction of each kind, with the token counts the provider reports and the
+ * prices the endpoint is configured with. Estimating image tokens in
+ * particular is guesswork — pan-and-scan means one photo can be several crops.
+ */
+async function measureCost(emit: (line: string) => void, auth: Record<string, string>): Promise<void> {
+  const base = endpoint.replace(/\/+$/, '');
+
+  let prices: {
+    model?: string;
+    visionModel?: string;
+    perMillionTokens?: { in: number; out: number; visionIn: number; visionOut: number };
+  } = {};
+  try {
+    prices = await (await fetch(`${base}/pricing`, { headers: auth })).json();
+  } catch {
+    /* an endpoint without pricing still reports tokens */
+  }
+  const rates = prices.perMillionTokens;
+
+  emit('');
+  emit('Cost of one run, measured:');
+
+  const runs: { label: string; model?: string; vision: boolean; content: unknown }[] = [
+    {
+      label: 'pasted poster text',
+      model: prices.model,
+      vision: false,
+      content: `${SYSTEM_PROMPT}\n\n---\n\n${SAMPLE_POSTER}`,
+    },
+    {
+      label: 'photo of a poster',
+      model: prices.visionModel,
+      vision: true,
+      content: [
+        { type: 'text', text: `${SYSTEM_PROMPT}\n\n---\n\nRead the events in this image.` },
+        { type: 'image_url', image_url: { url: DATA_URL } },
+      ],
+    },
+  ];
+
+  for (const run of runs) {
+    try {
+      const res = await fetch(chatUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ messages: [{ role: 'user', content: run.content }] }),
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        emit(`  ${run.label.padEnd(20)} ${readOutcome(res.status, raw)}`);
+        continue;
+      }
+      const usage = readUsage(raw);
+      if (!usage?.prompt_tokens) {
+        emit(`  ${run.label.padEnd(20)} answered, but reported no token usage`);
+        continue;
+      }
+      const inTok = usage.prompt_tokens ?? 0;
+      const outTok = usage.completion_tokens ?? 0;
+      let line = `  ${run.label.padEnd(20)} ${inTok} in + ${outTok} out tokens`;
+      if (rates) {
+        const perIn = run.vision ? rates.visionIn : rates.in;
+        const perOut = run.vision ? rates.visionOut : rates.out;
+        const cost = (inTok * perIn + outTok * perOut) / 1_000_000;
+        line += `  =  ${money(cost)}  (${Math.round(1 / cost).toLocaleString()} runs per €1)`;
+      }
+      emit(line);
+      if (run.model) emit(`  ${''.padEnd(20)} on ${run.model}`);
+    } catch (err) {
+      emit(`  ${run.label.padEnd(20)} ${(err as Error).message}`);
+    }
+  }
+
+  if (!rates) emit('  (set PRICE_IN / PRICE_OUT in wrangler.toml to see money as well as tokens)');
+}
+
 export async function diagnose(settings: Settings, onLine: (line: string) => void): Promise<string> {
   const lines: string[] = [
     `CalDrop endpoint report — ${new Date().toISOString()}`,
@@ -209,6 +327,8 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   emit('');
   emit('A probe that fails while "minimal" succeeds names the feature to drop.');
+
+  await measureCost(emit, auth);
 
   // Knowing that pictures are refused is only half an answer; the other half
   // is which of this provider's models would accept one.

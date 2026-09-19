@@ -19,6 +19,14 @@ MODEL = "gemma-4-31b"
 # provider error, so photos go to the one the endpoint report found working.
 VISION_MODEL = "gemma-3-27b-it"
 
+# Euros per million tokens, from the provider's own pricing page. Only used to
+# turn measured token counts into money in the endpoint report; nothing here
+# changes what is sent or charged.
+PRICE_IN = "0.10"
+PRICE_OUT = "0.30"
+PRICE_VISION_IN = "0.25"
+PRICE_VISION_OUT = "0.50"
+
 # Per-IP requests per day. This exists to stop a stranger who finds the URL
 # from spending the operator's credits, not to ration the operator: one run of
 # the endpoint report alone is a dozen or more requests.
