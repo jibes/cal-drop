@@ -1,7 +1,12 @@
 import { useState } from 'react';
-import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
+import {
+  androidCalendarIntent,
+  deeplinkCaveat,
+  googleCalendarUrl,
+  outlookCalendarUrl,
+} from '../lib/calendar';
 import { describeRrule, formatWhen } from '../lib/format';
-import { downloadIcs, icsOpenLink } from '../lib/ics';
+import { downloadIcs, icsLink } from '../lib/ics';
 import type { EventDraft } from '../lib/types';
 
 interface Props {
@@ -22,14 +27,20 @@ function needsAttention(event: EventDraft): boolean {
   return event.confidence < 0.6 || Boolean(event.notes);
 }
 
+const onAndroid = () => /android/i.test(navigator.userAgent);
+
 /**
- * The calendar file itself. A link when the endpoint can serve it over https,
- * because that is what a phone will offer to open in a calendar app; a plain
- * download otherwise.
+ * Into whichever calendar the person actually keeps.
+ *
+ * On Android that is an insert-event intent, which only calendar apps answer.
+ * Elsewhere it is the calendar file served inline over https, which iOS
+ * recognises and offers to add. With no endpoint to serve that, the file is
+ * downloaded instead.
  */
 export function CalendarFile({ events }: { events: EventDraft[] }) {
-  const href = icsOpenLink(events);
   const label = events.length > 1 ? `Open in calendar (${events.length})` : 'Open in calendar';
+  // An insert intent carries one event; several of them are a file.
+  const href = onAndroid() && events.length === 1 ? androidCalendarIntent(events[0]) : icsLink(events);
   return href ? (
     <a className="button" href={href}>
       {label}
@@ -79,6 +90,9 @@ export function EventRow({ event, onChange, onRemove }: Props) {
       <div className="card-actions secondary">
         <button className="ghost small" onClick={() => setOpen((v) => !v)}>
           {open ? 'Done' : 'Edit'}
+        </button>
+        <button className="ghost small" onClick={() => downloadIcs([event])}>
+          .ics file
         </button>
         <button className="ghost small" onClick={onRemove}>
           Discard

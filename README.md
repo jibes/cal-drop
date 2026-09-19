@@ -30,10 +30,11 @@ paste / drop ───┘                                │                    
 
 - **One input** takes all of it: paste, drop, type, shoot, or share. Whether
   something is a link, plain text, an image or a PDF is the app's problem.
-- **Adding to the calendar is one tap.** A `.ics` download is a file the phone
-  then has to find a handler for; the Google and Outlook deep links open the
-  calendar app with the event already filled in. `.ics` stays for desktop,
-  multi-event exports and recurring events.
+- **Adding to the calendar is one tap**, into whichever calendar you keep.
+  On Android that is an insert-event intent, which only calendar apps answer;
+  on iOS the calendar file is served inline over https, which Safari offers to
+  add. Google and Outlook are offered as equal alternatives, and the `.ics`
+  file is there for everything else.
 - **Verification is a glance, not a re-read.** Every event shows the verbatim
   words the date was read from — *read from "Sa 12.09. — Beginn 20 Uhr"* — so
   checking it against the poster takes a second.

@@ -146,29 +146,6 @@ export function icsLink(events: EventDraft[]): string {
   return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}&c=${encoded}`;
 }
 
-/**
- * The link to actually put in front of someone.
- *
- * Android decides what opens a file from an intent, not from a header, so a
- * plain https link to a calendar file is downloaded and left in Downloads for
- * the user to find. An intent URL says what to do with it — view it, as
- * text/calendar — and Android answers with the calendar app. If nothing
- * handles it, browser_fallback_url puts us back on the ordinary link.
- *
- * Everywhere else the https link is right: iOS recognises a calendar file
- * served inline and offers to add it.
- */
-export function icsOpenLink(events: EventDraft[]): string {
-  const url = icsLink(events);
-  if (!url || !/android/i.test(navigator.userAgent)) return url;
-
-  const withoutScheme = url.replace(/^https?:\/\//, '');
-  return (
-    `intent://${withoutScheme}#Intent;scheme=https;action=android.intent.action.VIEW;` +
-    `type=text/calendar;S.browser_fallback_url=${encodeURIComponent(url)};end`
-  );
-}
-
 export function downloadIcs(events: EventDraft[]): void {
   const name = events.length === 1 ? slug(events[0].title) : 'events';
   const blob = new Blob([buildIcs(events)], { type: 'text/calendar;charset=utf-8' });
