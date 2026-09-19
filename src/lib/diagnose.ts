@@ -1,4 +1,5 @@
 import { SYSTEM_PROMPT } from './ai';
+import { androidCalendarIntent } from './calendar';
 import { endpoint } from './settings';
 import type { Settings } from './types';
 
@@ -157,6 +158,24 @@ function visionCandidates(models: string[]): string[] {
   const notAReader = /embed|whisper|flux|guard|bge-|e5-|image$|-image|paraphrase/i;
   return models.filter((id) => looksVision.test(id) && !notAReader.test(id)).slice(0, 6);
 }
+
+const SAMPLE_EVENT = {
+  id: 'sample',
+  title: 'Sommerfest im Hof',
+  startDate: '2026-09-12',
+  startTime: '20:00',
+  endDate: '',
+  endTime: '',
+  allDay: false,
+  location: 'Kulturzentrum, Berlin',
+  timezone: 'Europe/Berlin',
+  rrule: '',
+  description: '',
+  url: '',
+  sourceText: '',
+  confidence: 1,
+  notes: '',
+};
 
 const SAMPLE_POSTER = `SOMMERFEST IM HOF
 Sa 12.09. — Einlass 19:00, Beginn 20 Uhr
@@ -327,6 +346,14 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   emit('');
   emit('A probe that fails while "minimal" succeeds names the feature to drop.');
+
+  // Which link the calendar button will actually use here. Whether the right
+  // app opens is decided by this string and by what the device does with it,
+  // and neither is visible from anywhere else.
+  emit('');
+  emit(`platform ${/android/i.test(navigator.userAgent) ? 'Android' : navigator.userAgent.slice(0, 60)}`);
+  emit('Open in calendar would follow:');
+  emit(`  ${androidCalendarIntent(SAMPLE_EVENT).slice(0, 300)}`);
 
   await measureCost(emit, auth);
 

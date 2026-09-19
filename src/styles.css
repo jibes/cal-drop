@@ -160,6 +160,9 @@ details textarea { margin: 10px 0; }
 
 .diagnose { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 
+.variants { display: grid; gap: 6px; margin-top: 10px; }
+.variants .button { text-align: left; font-family: ui-monospace, monospace; }
+
 .report {
   background: var(--surface-2);
   border: 1px solid var(--line);
