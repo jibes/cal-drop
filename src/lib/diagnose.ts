@@ -145,10 +145,16 @@ function readOutcome(status: number, raw: string): string {
   return events.length > 0 ? 'ok (streamed)' : 'ok';
 }
 
-/** The models worth asking, by the names providers give vision models. */
+/**
+ * The models worth asking, by the names providers give vision models — minus
+ * the ones whose names look similar for unrelated reasons: an image generator,
+ * a speech model and an embedding model all fail this test for no useful
+ * reason, and each wasted attempt costs a request against the quota.
+ */
 function visionCandidates(models: string[]): string[] {
-  const likely = models.filter((id) => /(^|[-.])vl([-.]|$)|vision|pixtral|gemma-[34]|glm-5|qwen-image/i.test(id));
-  return likely.slice(0, 6);
+  const looksVision = /(^|[-.])vl([-.]|$)|vision|pixtral|gemma-[34]/i;
+  const notAReader = /embed|whisper|flux|guard|bge-|e5-|image$|-image|paraphrase/i;
+  return models.filter((id) => looksVision.test(id) && !notAReader.test(id)).slice(0, 6);
 }
 
 export async function diagnose(settings: Settings, onLine: (line: string) => void): Promise<string> {
@@ -233,9 +239,14 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
         outcome = `could not reach the endpoint: ${(err as Error).message}`;
       }
       emit(`  ${model.padEnd(30)} ${outcome}`);
+      if (outcome.startsWith('ok')) {
+        emit('');
+        emit(`Use this: VISION_MODEL = "${model}" in worker/wrangler.toml.`);
+        return lines.join('\n');
+      }
     }
     emit('');
-    emit('Put a model that reports ok into VISION_MODEL in worker/wrangler.toml.');
+    emit('None of those accepted an image. Photos need a different provider.');
   }
 
   return lines.join('\n');

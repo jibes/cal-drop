@@ -15,11 +15,14 @@ MODEL = "gemma-4-31b"
 
 # Used only for requests that attach a picture. Leave unset to use MODEL for
 # everything. gemma-4-31b is documented as multimodal but this API refuses
-# every image encoding for it, so photos are routed to a model that works.
-VISION_MODEL = "qwen2.5-vl-72b-instruct"
+# every image encoding for it, and qwen2.5-vl-72b-instruct answers with a
+# provider error, so photos go to the one the endpoint report found working.
+VISION_MODEL = "gemma-3-27b-it"
 
-# Per-IP requests per day.
-DAILY_LIMIT = "20"
+# Per-IP requests per day. This exists to stop a stranger who finds the URL
+# from spending the operator's credits, not to ration the operator: one run of
+# the endpoint report alone is a dozen or more requests.
+DAILY_LIMIT = "200"
 
 # Uncomment after `npx wrangler kv namespace create RATE_LIMIT` for a real,
 # cross-isolate daily quota. Without it the limit is per-isolate only.
