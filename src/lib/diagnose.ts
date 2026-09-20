@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT } from './ai';
+import { requestBody, type ContentPart } from './ai';
 import { endpoint } from './settings';
 import type { Settings } from './types';
 
@@ -158,6 +158,22 @@ function visionCandidates(models: string[]): string[] {
   return models.filter((id) => looksVision.test(id) && !notAReader.test(id)).slice(0, 6);
 }
 
+/** A poster-sized picture, because an image's token cost scales with its size
+ *  and a tiny test pixel would measure nothing the app ever sends. */
+function posterSizedImage(): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 1600;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return DATA_URL;
+  ctx.fillStyle = '#123'; ctx.fillRect(0, 0, 1200, 1600);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 90px sans-serif';
+  ctx.fillText('SOMMERFEST', 80, 400);
+  ctx.font = '54px sans-serif';
+  ctx.fillText('Sa 12.09. — 20 Uhr', 80, 520);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 const SAMPLE_POSTER = `SOMMERFEST IM HOF
 Sa 12.09. — Einlass 19:00, Beginn 20 Uhr
 Kulturzentrum Alte Feuerwache, Berlin
@@ -197,6 +213,10 @@ function readUsage(raw: string): Usage | undefined {
 const money = (euros: number) =>
   euros >= 0.01 ? `€${euros.toFixed(3)}` : `${(euros * 100).toFixed(4)} cents`;
 
+/** Without grouping, because a thousand separator reads as a decimal point to
+ *  half the world and the figure beside it is a decimal. */
+const plainCount = (n: number) => n.toLocaleString('en-US', { useGrouping: false });
+
 /**
  * What a run actually costs, measured rather than estimated: one real
  * extraction of each kind, with the token counts the provider reports and the
@@ -226,15 +246,15 @@ async function measureCost(emit: (line: string) => void, auth: Record<string, st
       label: 'pasted poster text',
       model: prices.model,
       vision: false,
-      content: `${SYSTEM_PROMPT}\n\n---\n\n${SAMPLE_POSTER}`,
+      content: SAMPLE_POSTER,
     },
     {
       label: 'photo of a poster',
       model: prices.visionModel,
       vision: true,
       content: [
-        { type: 'text', text: `${SYSTEM_PROMPT}\n\n---\n\nRead the events in this image.` },
-        { type: 'image_url', image_url: { url: DATA_URL } },
+        { type: 'text', text: 'Read the events in this image.' },
+        { type: 'image_url', image_url: { url: posterSizedImage() } },
       ],
     },
   ];
@@ -244,7 +264,13 @@ async function measureCost(emit: (line: string) => void, auth: Record<string, st
       const res = await fetch(chatUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ messages: [{ role: 'user', content: run.content }] }),
+        // The app's own request, with delivery the one difference: token
+        // counts ride on the response body, and a provider that streams need
+        // not report them at all. Same prompt, same constraints, same cost.
+        body: JSON.stringify({
+          ...requestBody(run.content as string | ContentPart[]),
+          stream: false,
+        }),
       });
       const raw = await res.text();
       if (!res.ok) {
@@ -263,7 +289,7 @@ async function measureCost(emit: (line: string) => void, auth: Record<string, st
         const perIn = run.vision ? rates.visionIn : rates.in;
         const perOut = run.vision ? rates.visionOut : rates.out;
         const cost = (inTok * perIn + outTok * perOut) / 1_000_000;
-        line += `  =  ${money(cost)}  (${Math.round(1 / cost).toLocaleString()} runs per €1)`;
+        line += `  =  ${money(cost)}  (${plainCount(Math.round(1 / cost))} runs per €1)`;
       }
       emit(line);
       if (run.model) emit(`  ${''.padEnd(20)} on ${run.model}`);
@@ -296,7 +322,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   const code = settings.accessCode.trim();
   const auth: Record<string, string> = code ? { Authorization: `Bearer ${code}` } : {};
   let models: string[] = [];
-  let imagesFailed = false;
+  let imageWorks = false;
 
   // Which models exist is the question a failed image probe leads to, so
   // answer it in the same report rather than in a second round trip.
@@ -321,7 +347,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     } catch (err) {
       outcome = `could not reach the endpoint: ${(err as Error).message}`;
     }
-    if (probe.name.startsWith('image:') && !outcome.startsWith('ok')) imagesFailed = true;
+    if (probe.name.startsWith('image:') && outcome.startsWith('ok')) imageWorks = true;
     emit(`${probe.name.padEnd(32)} ${outcome}`);
   }
 
@@ -332,7 +358,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   // Knowing that pictures are refused is only half an answer; the other half
   // is which of this provider's models would accept one.
-  if (imagesFailed) {
+  if (!imageWorks) {
     emit('');
     emit('Images were refused, so trying the models most likely to accept one:');
     for (const model of visionCandidates(models)) {

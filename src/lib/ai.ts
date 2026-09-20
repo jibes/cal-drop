@@ -65,7 +65,7 @@ interface RawEvent {
   notes?: string;
 }
 
-type ContentPart =
+export type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };
 
@@ -317,6 +317,48 @@ async function readStream(
   return { text: out.trim() ? out : fromCompletion(raw), raw, error };
 }
 
+/**
+ * Room for roughly twenty events, which is a dense festival programme, and a
+ * ceiling on a model that starts explaining itself rather than answering —
+ * unconstrained, one of them returned 2787 tokens for a single event, all of
+ * it paid for and none of it wanted.
+ */
+const MAX_OUTPUT_TOKENS = 2000;
+
+/**
+ * Exactly what the app asks the endpoint, exported so that measuring the cost
+ * of a run measures a real one. A request built separately for the report
+ * would drift, and did: without the structured-output constraint the model
+ * answered at length and the measurement was of something the app never sends.
+ */
+export function requestBody(content: string | ContentPart[], attempt = rememberedRung()) {
+  const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
+  return {
+    // No model: the endpoint decides which one answers.
+    stream: true,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    messages: messagesFor(rung, content),
+    ...(rung.temperature ? { temperature: 0 } : {}),
+    ...(rung.structured === 'tools'
+      ? {
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'save_events',
+                description: 'Save every event found in the source.',
+                parameters: EVENT_SCHEMA,
+              },
+            },
+          ],
+          tool_choice: { type: 'function', function: { name: 'save_events' } },
+        }
+      : rung.structured === 'json'
+        ? { response_format: { type: 'json_object' } }
+        : {}),
+  };
+}
+
 function messagesFor(rung: Rung, content: string | ContentPart[]) {
   if (rung.system === 'role') {
     return [
@@ -338,7 +380,6 @@ async function callModel(
   attempt: number,
   options: ExtractOptions,
 ): Promise<string> {
-  const rung = LADDER[attempt];
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -351,29 +392,7 @@ async function callModel(
         'Content-Type': 'application/json',
         ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
-      body: JSON.stringify({
-        // No model: the endpoint decides which one answers.
-        stream: true,
-        messages: messagesFor(rung, content),
-        ...(rung.temperature ? { temperature: 0 } : {}),
-        ...(rung.structured === 'tools'
-          ? {
-              tools: [
-                {
-                  type: 'function',
-                  function: {
-                    name: 'save_events',
-                    description: 'Save every event found in the source.',
-                    parameters: EVENT_SCHEMA,
-                  },
-                },
-              ],
-              tool_choice: { type: 'function', function: { name: 'save_events' } },
-            }
-          : rung.structured === 'json'
-            ? { response_format: { type: 'json_object' } }
-            : {}),
-      }),
+      body: JSON.stringify(requestBody(content, attempt)),
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
