@@ -1,5 +1,10 @@
-const MAX_DIMENSION = 1600;
-const JPEG_QUALITY = 0.85;
+const MAX_DIMENSION = 1280;
+const JPEG_QUALITY = 0.75;
+
+/** What to fall back to when the upload itself will not go through: a poster's
+ *  headline and date survive this easily, and it is a quarter of the bytes. */
+const FRUGAL_DIMENSION = 900;
+const FRUGAL_QUALITY = 0.6;
 
 /** Below this, a photo is unlikely to carry small print legibly. */
 export const SHARP_ENOUGH = 1200;
@@ -40,4 +45,23 @@ export async function fileToDataUrl(file: Blob): Promise<string> {
 /** A frame from a live camera, for browsers with no still-capture API. */
 export function frameToDataUrl(video: HTMLVideoElement): Prepared {
   return downscale(video, video.videoWidth, video.videoHeight);
+}
+
+/**
+ * The same picture, smaller — for a connection that could not carry the first
+ * one. Vision models tile their input at around 900px anyway, so this costs
+ * far less in legibility than it saves in bytes.
+ */
+export async function shrinkFurther(dataUrl: string): Promise<string> {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  const scale = Math.min(1, FRUGAL_DIMENSION / Math.max(image.width, image.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(image.width * scale);
+  canvas.height = Math.round(image.height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', FRUGAL_QUALITY);
 }

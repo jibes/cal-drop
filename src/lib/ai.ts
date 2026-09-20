@@ -1,4 +1,5 @@
 import { endpoint } from './settings';
+import { shrinkFurther } from './image';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
 
@@ -488,6 +489,12 @@ async function callModel(
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
+    // A request that never left is usually the endpoint being unreachable —
+    // unless it was carrying a photo, in which case the likeliest reason is
+    // that the upload itself died, and a smaller one may still get through.
+    if (Array.isArray(content)) {
+      throw new TransportError('The photo could not be sent — the upload did not complete.');
+    }
     throw new Error(describeNetworkFailure());
   }
 
@@ -628,6 +635,22 @@ export async function extractEvents(
   try {
     return await runPass(source, settings, true, options);
   } catch (err) {
+    // The line could not carry the picture. Carry less of it: a poster's
+    // headline and date read perfectly well at 900px, and it is a quarter of
+    // the bytes — which is the difference on a connection that just failed.
+    if (err instanceof TransportError && source.images.length > 0) {
+      try {
+        const smaller = await Promise.all(source.images.map(shrinkFurther));
+        return await runPass({ ...source, images: smaller }, settings, true, options);
+      } catch (retry) {
+        if ((retry as Error).name === 'AbortError') throw retry;
+        throw new Error(
+          `${(retry as Error).message}\n\nThe photo was sent again at a smaller size and did not get ` +
+            'through either. Either the connection is too weak to carry one, or the endpoint is not ' +
+            'answering at all — pasting some text will tell you which.',
+        );
+      }
+    }
     if ((err as Error).name === 'AbortError' || source.images.length === 0) throw err;
     // Text just worked for other sources, so a failure only on the pass that
     // carries pictures points at the model rather than at this request. Which
@@ -635,7 +658,7 @@ export async function extractEvents(
     // not accepted, while an answer in prose means they were read by a model
     // that cannot be made to answer in JSON.
     const message = (err as Error).message;
-    if (message.includes('connection dropped')) {
+    if (message.includes('connection dropped') || message.includes('upload did not complete')) {
       throw new Error(
         `${message}\n\nA photo is the largest thing this app sends, so it is the one a shaky ` +
           'connection loses. Try again, or use the text if you have it.',
