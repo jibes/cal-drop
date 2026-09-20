@@ -6,6 +6,8 @@ interface Props {
   onText: (value: string) => void;
   onShots: (images: string[], warning: string) => void;
   busy: boolean;
+  /** Results are on screen, so this is one of a row of small buttons. */
+  compact?: boolean;
 }
 
 /**
@@ -17,7 +19,7 @@ interface Props {
  * is a tap. Where the browser will not let the clipboard be read unprompted,
  * the button reads and sends in one gesture instead.
  */
-export function ClipboardCard({ onText, onShots, busy }: Props) {
+export function ClipboardCard({ onText, onShots, busy, compact = false }: Props) {
   const [peek, setPeek] = useState<ClipboardPeek | null>(null);
   const [silent, setSilent] = useState(false);
 
@@ -70,15 +72,15 @@ export function ClipboardCard({ onText, onShots, busy }: Props) {
    * There is always a control here: a clipboard that could not be read, or was
    * empty at the moment it was looked at, must not remove the way to paste.
    */
-  if (!peek) {
+  if (!peek || compact) {
     return (
       <button
-        className="clipboard ask"
+        className={`clipboard ask${compact ? ' tight' : ''}`}
         disabled={busy}
-        onClick={() => void readClipboard().then(send)}
-        title={silent ? 'Nothing readable on the clipboard just now' : undefined}
+        onClick={() => void (peek ? Promise.resolve(peek) : readClipboard()).then(send)}
+        title={silent && !peek ? 'Nothing readable on the clipboard just now' : undefined}
       >
-        📋 Paste from clipboard
+        {compact ? '📋 Paste' : '📋 Paste from clipboard'}
       </button>
     );
   }

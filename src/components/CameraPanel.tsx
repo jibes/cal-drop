@@ -245,7 +245,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
             void start();
           }}
         >
-          {standDown ? '📷 Scan another' : '📷 Turn on the camera'}
+          {standDown ? '📷 Scan' : '📷 Turn on the camera'}
         </button>
       </div>
     );

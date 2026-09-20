@@ -55,29 +55,30 @@ export function CalendarFile({ events }: { events: EventDraft[] }) {
  */
 export function Destinations({ events }: { events: EventDraft[] }) {
   const single = events.length === 1 ? events[0] : null;
-  const onlyOne = 'Google and Outlook take one event at a time';
+
+  // With several events selected there is only one way to take them, so the
+  // other two are not shown greyed out: a disabled button asks to be pressed
+  // and then explains itself in a tooltip no phone will ever show.
+  if (!single) {
+    return (
+      <div className="destinations">
+        <div className="card-actions">
+          <CalendarFile events={events} />
+        </div>
+        <p className="muted why">Google and Outlook take one event at a time.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="card-actions">
       <CalendarFile events={events} />
-      {single ? (
-        <a className="button" href={googleCalendarUrl(single)} target="_blank" rel="noreferrer">
-          Google
-        </a>
-      ) : (
-        <button className="button" disabled title={onlyOne}>
-          Google
-        </button>
-      )}
-      {single ? (
-        <a className="button" href={outlookCalendarUrl(single)} target="_blank" rel="noreferrer">
-          Outlook
-        </a>
-      ) : (
-        <button className="button" disabled title={onlyOne}>
-          Outlook
-        </button>
-      )}
+      <a className="button" href={googleCalendarUrl(single)} target="_blank" rel="noreferrer">
+        Google
+      </a>
+      <a className="button" href={outlookCalendarUrl(single)} target="_blank" rel="noreferrer">
+        Outlook
+      </a>
     </div>
   );
 }
@@ -113,8 +114,10 @@ export function EventRow({ event, selectable, selected, onToggle, onChange, onRe
         <p className="when">
           {formatWhen(event)}
           {repeat && <span className="repeat"> · {repeat}</span>}
-          {event.location && <span className="muted"> · {event.location}</span>}
         </p>
+        {/* The place gets its own line: it is the part that wraps, and a date
+            broken across two lines is harder to check at a glance. */}
+        {event.location && <p className="where">{event.location}</p>}
         {event.sourceText && (
           <p className="quote">
             read from “{event.sourceText}”

@@ -107,7 +107,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
   return (
     <section
       ref={boxRef}
-      className={`dropzone${dragging ? ' dragging' : ''}`}
+      className={`dropzone${dragging ? ' dragging' : ''}${results > 0 ? ' again' : ''}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
@@ -122,9 +122,11 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
       {/* The reason the app exists comes first, already looking at the world. */}
       <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} results={results} />
 
-      <div className="or">or</div>
+      {/* Once there is something to read below, this whole panel is in the way
+          of it: the ways in shrink to one quiet row and give the screen back. */}
+      {results === 0 && <div className="or">or</div>}
 
-      <ClipboardCard onText={onText} onShots={onShots} busy={busy} />
+      <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={results > 0} />
 
       {/* Always present, so the camera panel has something to hand back to. */}
       <input
@@ -136,9 +138,9 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
         onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
       />
 
-      <div className="drop-actions">
+      <div className={`drop-actions${results > 0 ? ' tight' : ''}`}>
         <label className="button" title="Choose a photo or PDF already on this device">
-          Choose file
+          {results > 0 ? '📎 File' : 'Choose file'}
           <input
             type="file"
             accept="image/*,application/pdf"
