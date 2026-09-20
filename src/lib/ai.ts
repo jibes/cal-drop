@@ -110,6 +110,14 @@ interface Rung {
   temperature: boolean;
 }
 
+/** How each rung reads in a report. */
+const RUNG_NAMES = ['with a tool call', 'in JSON mode', 'plainly', 'plainly, no system turn'];
+
+/** Four failures quoting the same 200-character body is not four times as
+ *  useful as one, so each line says only enough to tell them apart. */
+const short = (message: string) =>
+  message.length > 140 ? `${message.slice(0, 140).trimEnd()}…` : message;
+
 const LADDER: Rung[] = [
   { structured: 'tools', system: 'role', temperature: true },
   { structured: 'json', system: 'role', temperature: true },
@@ -134,16 +142,22 @@ const MODE_TTL = 24 * 60 * 60 * 1000;
  * behind one endpoint there are usually two models, and what the text model
  * accepts says nothing about what the vision model will.
  */
+/** Where to start when nothing has been learned yet. A tool call is the most
+ *  reliable way to get JSON out of a text model and the least likely thing a
+ *  vision model can do — most open-weight ones have no tool calling at all —
+ *  so a picture starts one rung down and reaches the tool call last. */
+const FIRST_RUNG: Record<Shape, number> = { text: 0, image: 1 };
+
 function rememberedRung(shape: Shape): number {
   try {
     const stored = localStorage.getItem(`${MODE_KEY}.${shape}`);
-    if (!stored) return 0;
+    if (!stored) return FIRST_RUNG[shape];
     const { rung, at } = JSON.parse(stored) as { rung?: number; at?: number };
-    if (!Number.isInteger(rung) || rung! < 0 || rung! >= LADDER.length) return 0;
-    if (!Number.isFinite(at) || Date.now() - at! > MODE_TTL) return 0;
+    if (!Number.isInteger(rung) || rung! < 0 || rung! >= LADDER.length) return FIRST_RUNG[shape];
+    if (!Number.isFinite(at) || Date.now() - at! > MODE_TTL) return FIRST_RUNG[shape];
     return rung!;
   } catch {
-    return 0;
+    return FIRST_RUNG[shape];
   }
 }
 
@@ -309,6 +323,29 @@ interface StreamDelta {
   tool_calls?: { function?: { arguments?: string } }[];
 }
 
+/**
+ * A 200 with no answer in it. The body is the evidence, but 200 characters of
+ * JSON is not a sentence — so where the shape is recognisable, say what it
+ * means: the model was asked, it replied, and it put nothing in the reply.
+ */
+function describeSilence(raw: string): string {
+  try {
+    const body = JSON.parse(raw) as {
+      model?: string;
+      choices?: { finish_reason?: string; message?: { content?: string } }[];
+    };
+    const choice = body.choices?.[0];
+    if (choice && !choice.message?.content?.trim()) {
+      const who = body.model ? ` (${body.model})` : '';
+      const why = choice.finish_reason && choice.finish_reason !== 'stop' ? `, stopping at ${choice.finish_reason}` : '';
+      return `The model answered with nothing at all${who}${why}.`;
+    }
+  } catch {
+    /* not a completion body; the raw text is all there is */
+  }
+  return `The endpoint answered, but with nothing this app could read: ${raw.trim().slice(0, 200)}`;
+}
+
 /** Read an SSE stream, accumulating whichever channel the model chose to answer on. */
 /**
  * Pull the answer out of a whole, non-streamed completion. Plenty of
@@ -322,7 +359,11 @@ function fromCompletion(raw: string): string {
         choices?: { message?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[];
       }
     ).choices?.[0]?.message;
-    return message?.tool_calls?.[0]?.function?.arguments ?? message?.content ?? '';
+    // A model may split its answer across several tool calls, and may send an
+    // empty string in one channel while the answer is in the other — so both
+    // are read, and an empty string counts as nothing rather than as an answer.
+    const called = (message?.tool_calls ?? []).map((call) => call.function?.arguments ?? '').join('');
+    return called.trim() ? called : (message?.content ?? '');
   } catch {
     return '';
   }
@@ -543,7 +584,7 @@ async function callModel(
     error
       ? `The model provider rejected the request: ${error}`
       : raw.trim()
-        ? `The endpoint answered, but with nothing this app could read: ${raw.trim().slice(0, 200)}`
+        ? describeSilence(raw)
         : 'The endpoint answered with an empty body.',
   );
 }
@@ -557,6 +598,9 @@ async function runPass(
   const shape: Shape = withImages && source.images.length > 0 ? 'image' : 'text';
   const content = buildUserContent(source, withImages);
   let last: Error | undefined;
+  /** What each way of asking did, so a failure names them rather than being
+   *  four identical attempts reported as one sentence. */
+  const tally: string[] = [];
 
   // Every rung gets its turn. A rung fails by being refused, by answering with
   // nothing, or — the only way a model that ignores tools can fail — by
@@ -579,7 +623,10 @@ async function runPass(
             continue;
           }
           // Keep what the endpoint said: if no rung works, it is the answer.
-          if (err instanceof RungError) last = err;
+          if (err instanceof RungError) {
+            last = err;
+            tally.push(`${RUNG_NAMES[attempt]}: ${short(err.message)}`);
+          }
           throw err;
         }
         try {
@@ -591,7 +638,10 @@ async function runPass(
           last = err as Error;
           // Half an answer is not the rung's fault; a whole one that will not
           // parse is, and asking again the same way would only repeat it.
-          if (!answer.broken) throw new RungError(last.message);
+          if (!answer.broken) {
+            tally.push(`${RUNG_NAMES[attempt]}: ${short(last.message)}`);
+            throw new RungError(last.message);
+          }
           broken = true;
         }
       }
@@ -613,7 +663,14 @@ async function runPass(
     }
   }
 
-  throw last ?? new Error('The endpoint gave no usable answer.');
+  // Every rung refused. What each one said is the diagnosis, so all of it goes
+  // out: one line per way of asking, rather than the last one standing in for
+  // four attempts nobody can see.
+  throw new Error(
+    tally.length > 1
+      ? `No way of asking worked:\n${tally.map((line) => `• ${line}`).join('\n')}`
+      : (last?.message ?? 'The endpoint gave no usable answer.'),
+  );
 }
 
 /**

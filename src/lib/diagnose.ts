@@ -82,6 +82,46 @@ const PROBES: Probe[] = [
       ],
     },
   },
+  // A picture on its own is not what the app sends: it sends a picture with a
+  // system turn and a way of asking for JSON, and a model that takes each of
+  // those alone can still answer nothing when they arrive together.
+  {
+    name: 'image + system role',
+    body: {
+      messages: [
+        { role: 'system', content: 'Be brief.' },
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: DATA_URL } }] },
+      ],
+    },
+  },
+  {
+    name: 'image + json_object',
+    body: {
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: `${LOOK} As JSON: {"colour":"…"}` }, { type: 'image_url', image_url: { url: DATA_URL } }] },
+      ],
+    },
+  },
+  {
+    name: 'image + tools',
+    body: {
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'say_colour',
+            description: 'Say the colour.',
+            parameters: { type: 'object', properties: { colour: { type: 'string' } }, required: ['colour'] },
+          },
+        },
+      ],
+      tool_choice: { type: 'function', function: { name: 'say_colour' } },
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: DATA_URL } }] },
+      ],
+    },
+  },
   {
     name: '+ response_format: json_object',
     body: {
@@ -143,7 +183,38 @@ function readOutcome(status: number, raw: string): string {
     }
     return `HTTP ${status}: ${trimmed.slice(0, 120)}`;
   }
-  return events.length > 0 ? 'ok (streamed)' : 'ok';
+  // A 200 with no answer inside it is the failure this report kept calling
+  // "ok": the provider accepted the request, the model said nothing, and only
+  // the body shows it. That is exactly the case a photo hits.
+  const said = answerIn(trimmed);
+  if (!said.trim()) return events.length > 0 ? '200, but the answer was empty' : '200, but no content';
+  return events.length > 0 ? `ok (streamed) — said ${JSON.stringify(said.slice(0, 40))}` : `ok — said ${JSON.stringify(said.slice(0, 40))}`;
+}
+
+/** Whatever the model actually said, streamed or whole, content or tool call. */
+function answerIn(raw: string): string {
+  let out = '';
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) continue;
+    const payload = trimmed.slice(5).trim();
+    if (payload === '[DONE]') continue;
+    try {
+      const delta = (JSON.parse(payload) as { choices?: { delta?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[] })
+        .choices?.[0]?.delta;
+      out += delta?.content ?? delta?.tool_calls?.[0]?.function?.arguments ?? '';
+    } catch {
+      /* not an event */
+    }
+  }
+  if (out.trim()) return out;
+  try {
+    const message = (JSON.parse(raw) as { choices?: { message?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[] })
+      .choices?.[0]?.message;
+    return (message?.tool_calls ?? []).map((call) => call.function?.arguments ?? '').join('') || message?.content || '';
+  } catch {
+    return '';
+  }
 }
 
 /**
