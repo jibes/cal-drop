@@ -24,16 +24,23 @@ export function ClipboardCard({ onText, onShots, busy }: Props) {
   const look = useCallback(async () => {
     if (!(await canPeekSilently())) return;
     setSilent(true);
+    // A read can fail simply because the document is not focused yet, so a
+    // failure means "nothing to show", never "remove the way to paste".
     setPeek(await readClipboard());
   }, []);
 
   useEffect(() => {
     if (!clipboardReadable()) return;
     void look();
-    // Something may have been copied while the app was in the background.
+    // Something may have been copied while the app was in the background, and
+    // the first read on load often lands before the document has focus.
     const onFocus = () => void look();
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [look]);
 
   const send = useCallback(
@@ -57,20 +64,24 @@ export function ClipboardCard({ onText, onShots, busy }: Props) {
 
   if (!clipboardReadable()) return null;
 
-  // No permission to look: read and send together, inside the tap.
-  if (!silent) {
+  /**
+   * Without something to show, the button reads and sends inside the tap —
+   * which is also the only thing a browser allows before permission is given.
+   * There is always a control here: a clipboard that could not be read, or was
+   * empty at the moment it was looked at, must not remove the way to paste.
+   */
+  if (!peek) {
     return (
       <button
         className="clipboard ask"
         disabled={busy}
         onClick={() => void readClipboard().then(send)}
+        title={silent ? 'Nothing readable on the clipboard just now' : undefined}
       >
         📋 Paste from clipboard
       </button>
     );
   }
-
-  if (!peek) return null;
 
   return (
     <button className="clipboard" disabled={busy} onClick={() => send(peek)}>

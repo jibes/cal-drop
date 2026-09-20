@@ -25,12 +25,16 @@ export function cameraSupported(): boolean {
 
 export async function openCamera(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
-    // Ask for the rear camera and as much detail as it will give; both are
-    // preferences, so a device that cannot honour them still opens.
+    // Ask for the rear camera, and for a 4:3 frame rather than the 16:9 a
+    // large width alone tends to select: a poster is taller than it is wide,
+    // and the preview shows exactly what will be sent, so a wide frame wastes
+    // most of it. Still capture is unaffected — ImageCapture returns the
+    // sensor's own photo whatever the preview is set to.
     video: {
       facingMode: { ideal: 'environment' },
-      width: { ideal: 3840 },
-      height: { ideal: 2160 },
+      width: { ideal: 2560 },
+      height: { ideal: 1920 },
+      aspectRatio: { ideal: 4 / 3 },
     },
     audio: false,
   });

@@ -48,6 +48,8 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
   const [shots, setShots] = useState<Prepared[]>([]);
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
+  /** The camera's own shape, so the preview shows the frame that gets sent. */
+  const [ratio, setRatio] = useState('4 / 3');
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE) === 'off';
@@ -191,8 +193,19 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
 
   return (
     <div className="camera">
-      <div className="stage">
-        <video ref={videoRef} playsInline muted autoPlay />
+      <div className="stage" style={{ aspectRatio: ratio }}>
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          onLoadedMetadata={(e) => {
+            const video = e.currentTarget;
+            if (video.videoWidth && video.videoHeight) {
+              setRatio(`${video.videoWidth} / ${video.videoHeight}`);
+            }
+          }}
+        />
         {live && <div className="frame-guide" aria-hidden="true" />}
         {error && <p className="stage-error">{error}</p>}
 
