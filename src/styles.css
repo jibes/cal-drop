@@ -96,6 +96,9 @@ h1 {
   flex-wrap: wrap;
 }
 
+/* Two equal doors to the ways in that are not the camera or the clipboard. */
+.drop-actions > * { flex: 1; min-width: 120px; }
+
 button,
 .button {
   font: inherit;
@@ -129,7 +132,7 @@ button.button:disabled:hover { border-color: var(--line); }
 .universal {
   resize: vertical;
   text-align: left;
-  margin-bottom: 12px;
+  margin: 12px 0;
 }
 
 .dropzone.dragging { border-color: var(--accent); background: var(--surface-2); }
@@ -359,7 +362,7 @@ a.button { text-decoration: none; display: inline-block; }
    and the subtraction is the rest of the first screen: nothing falls off when
    the bars appear. */
 .stage {
-  --stage-h: min(32svh, max(116px, calc(100svh - 430px)));
+  --stage-h: min(42svh, max(140px, calc(100svh - 345px)));
   --stage-w: min(calc(100vw - 60px), 612px, calc(var(--stage-h) * var(--ar, 1.3333)));
 
   position: relative;

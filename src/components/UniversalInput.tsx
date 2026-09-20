@@ -17,6 +17,7 @@ interface Props {
 export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Props) {
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [typing, setTyping] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const systemCameraRef = useRef<HTMLInputElement>(null);
 
@@ -39,6 +40,7 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
     if (!text.trim()) return;
     onText(text);
     setValue('');
+    setTyping(false);
   };
 
   return (
@@ -65,40 +67,17 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
 
       <ClipboardCard onText={onText} onShots={onShots} busy={busy} />
 
-      <textarea
-        className="universal"
-        rows={2}
-        value={value}
-        placeholder="…or paste a link or text"
-        onChange={(e) => setValue(e.target.value)}
-        onPaste={(e) => {
-          // You paste in order to have it read. Asking for a second tap to
-          // confirm that is a step with no decision in it.
-          const text = e.clipboardData.getData('text');
-          if (!text.trim()) return; // an image paste is handled globally
-          e.preventDefault();
-          submit(text);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
-            e.preventDefault();
-            submit();
-          }
-        }}
+      {/* Always present, so the camera panel has something to hand back to. */}
+      <input
+        ref={systemCameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
       />
 
       <div className="drop-actions">
-        {/* Pointing a camera at a poster is what this app is for, so it is the
-            one control that gets the weight. */}
-        {/* Always present, so the panel has something to hand back to. */}
-        <input
-          ref={systemCameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          hidden
-          onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
-        />
         <label className="button" title="Choose a photo or PDF already on this device">
           Choose file
           <input
@@ -109,14 +88,53 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
             onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
           />
         </label>
-        {/* Only typed text needs a submit: a pick runs on selection and a paste
-            runs on paste, so a permanent button here would be dead most of the time. */}
-        {value.trim() && (
-          <button onClick={() => submit()} disabled={busy}>
-            Read it
-          </button>
-        )}
+        {/* Typing is the rarest way in by far, so it is a door rather than a
+            field standing open: the first screen stays the camera and what is
+            already on the clipboard. */}
+        <button onClick={() => setTyping(true)} disabled={busy}>
+          ⌨ Text
+        </button>
       </div>
+
+      {typing && (
+        <div className="sheet-backdrop" onClick={() => setTyping(false)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <h2>Paste or type</h2>
+            <p className="hint">A link to an event, or the text of a poster.</p>
+            <textarea
+              className="universal"
+              rows={5}
+              autoFocus
+              value={value}
+              placeholder="https://… or the poster's text"
+              onChange={(e) => setValue(e.target.value)}
+              onPaste={(e) => {
+                // You paste in order to have it read. Asking for a second tap
+                // to confirm that is a step with no decision in it.
+                const text = e.clipboardData.getData('text');
+                if (!text.trim()) return; // an image paste is handled globally
+                e.preventDefault();
+                submit(text);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+            />
+            <div className="sheet-actions">
+              <span className="spacer" />
+              <button className="ghost" onClick={() => setTyping(false)}>
+                Cancel
+              </button>
+              <button className="primary" onClick={() => submit()} disabled={!value.trim()}>
+                Read it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

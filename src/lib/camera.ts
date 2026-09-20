@@ -23,7 +23,17 @@ export function cameraSupported(): boolean {
   return Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
 }
 
-export async function openCamera(): Promise<MediaStream> {
+export async function openCamera(deviceId = ''): Promise<MediaStream> {
+  if (deviceId) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, ...CONSTRAINTS },
+        audio: false,
+      });
+    } catch {
+      // That lens is gone, or refused; fall back to whatever faces outward.
+    }
+  }
   return navigator.mediaDevices.getUserMedia({
     // Ask for the rear camera, and for a 4:3 frame rather than the 16:9 a
     // large width alone tends to select: a poster is taller than it is wide,
@@ -41,43 +51,57 @@ const CONSTRAINTS: MediaTrackConstraints = {
   aspectRatio: { ideal: 4 / 3 },
 };
 
-/**
- * Prefer the ordinary rear camera over the ultra-wide.
- *
- * facingMode says which way a camera points, not which of several it should
- * be, and a phone with three rear lenses may hand back the ultra-wide — which
- * puts the poster small in a distorted frame, the opposite of what reading
- * small print needs. Labels only become readable once permission is granted,
- * which is why this runs after the first stream rather than instead of it.
- */
-export async function preferMainRearCamera(stream: MediaStream): Promise<MediaStream> {
-  const [track] = stream.getVideoTracks();
-  const current = track?.getSettings().deviceId;
+const LENS_KEY = 'caldrop.lens.v1';
 
-  let rear: MediaDeviceInfo[];
+/** Android names cameras "camera2 0, facing back"; the number is the lens. */
+const lensIndex = (label: string): number => Number(/(\d+)/.exec(label)?.[1] ?? 99);
+
+/**
+ * The rear cameras, in the order the device numbers them. Labels only become
+ * readable once permission has been granted, so this is worth nothing before
+ * the first stream and reliable after it.
+ */
+export async function rearCameras(): Promise<MediaDeviceInfo[]> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    rear = devices.filter((d) => d.kind === 'videoinput' && /back|rear|environment/i.test(d.label));
+    return devices
+      .filter((d) => d.kind === 'videoinput' && /back|rear|environment/i.test(d.label))
+      .sort((a, b) => lensIndex(a.label) - lensIndex(b.label));
   } catch {
-    return stream;
+    return [];
   }
-  // Without labels there is no way to tell one camera from another, and
-  // guessing risks landing on the front one.
-  if (rear.length < 2) return stream;
+}
 
-  const main =
-    rear.find((d) => !/wide|ultra|tele|macro|depth|zoom|monochrome/i.test(d.label)) ?? rear[0];
-  if (!main || main.deviceId === current) return stream;
+/**
+ * Which rear camera to open by default.
+ *
+ * facingMode says which way a camera points, not which of several it is, and a
+ * phone with three rear lenses may hand back the ultra-wide, which puts the
+ * poster small in a distorted frame. Nothing in the API says which lens is the
+ * ordinary one: some devices name it, most only number it, and the lowest
+ * number is conventionally the main camera. Both are guesses, which is why the
+ * choice can be overridden and is then remembered.
+ */
+export async function defaultRearCamera(): Promise<string> {
+  const rear = await rearCameras();
+  if (rear.length < 2) return '';
+  const named = rear.find((d) => !/wide|ultra|tele|macro|depth|zoom|monochrome/i.test(d.label));
+  return (named ?? rear[0]).deviceId;
+}
 
+export function rememberedLens(): string {
   try {
-    const better = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: main.deviceId }, ...CONSTRAINTS },
-      audio: false,
-    });
-    closeCamera(stream);
-    return better;
+    return localStorage.getItem(LENS_KEY) ?? '';
   } catch {
-    return stream;
+    return '';
+  }
+}
+
+export function rememberLens(deviceId: string): void {
+  try {
+    localStorage.setItem(LENS_KEY, deviceId);
+  } catch {
+    /* the choice simply will not persist */
   }
 }
 

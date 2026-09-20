@@ -28,8 +28,11 @@ paste / drop ───┘                                │                    
                        Google deeplink    Outlook deeplink       .ics file
 ```
 
-- **One input** takes all of it: paste, drop, type, shoot, or share. Whether
-  something is a link, plain text, an image or a PDF is the app's problem.
+- **The first screen is the camera and the clipboard**, because those are how
+  a poster arrives. Choosing a file and typing are buttons beside them; typing
+  opens a sheet rather than standing open as a field, since it is the rarest
+  way in. Whether something is a link, plain text, an image or a PDF is still
+  the app's problem, not yours.
 - **The clipboard is shown, not guessed at.** Where the browser permits reading
   it, whatever was copied — poster text, a link, a screenshot — appears as a
   one-line preview with a tap to send it. Where it does not, the same button

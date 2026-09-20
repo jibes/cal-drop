@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cameraSupported,
   closeCamera,
+  defaultRearCamera,
   hasTorch,
   openCamera,
-  preferMainRearCamera,
+  rearCameras,
+  rememberedLens,
+  rememberLens,
   setTorch,
   takeShot,
 } from '../lib/camera';
@@ -59,6 +62,9 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
   const [torchable, setTorchable] = useState(false);
   /** The camera's own shape, so the preview shows the frame that gets sent. */
   const [ratio, setRatio] = useState(4 / 3);
+  /** Which rear camera, when the phone has several and names none of them. */
+  const [lens, setLens] = useState('');
+  const [lenses, setLenses] = useState<MediaDeviceInfo[]>([]);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE) === 'off';
@@ -82,11 +88,25 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
     }
   };
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (wanted = rememberedLens()) => {
     if (streamRef.current) return;
     setError('');
     try {
-      const stream = await preferMainRearCamera(await openCamera());
+      let stream = await openCamera(wanted);
+
+      // Labels are unreadable until permission exists, so which lens this
+      // should be can only be worked out once something is already open.
+      const rear = await rearCameras();
+      setLenses(rear);
+      if (!wanted) {
+        const preferred = await defaultRearCamera();
+        const open = stream.getVideoTracks()[0]?.getSettings().deviceId;
+        if (preferred && preferred !== open) {
+          closeCamera(stream);
+          stream = await openCamera(preferred);
+        }
+      }
+      setLens(stream.getVideoTracks()[0]?.getSettings().deviceId ?? '');
       streamRef.current = stream;
       setTorchable(hasTorch(stream));
       setLive(true);
@@ -175,6 +195,16 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
     [onShots],
   );
 
+  /** No API says which lens is the ordinary one, so offer the others. */
+  const nextLens = async () => {
+    if (lenses.length < 2) return;
+    const at = Math.max(0, lenses.findIndex((d) => d.deviceId === lens));
+    const pick = lenses[(at + 1) % lenses.length].deviceId;
+    rememberLens(pick);
+    stop();
+    await start(pick);
+  };
+
   const toggleTorch = async () => {
     const next = !torch;
     setTorchOn(next);
@@ -221,6 +251,11 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
         {error && <p className="stage-error">{error}</p>}
 
         <div className="stage-top">
+          {lenses.length > 1 && (
+            <button className="vf-chip" onClick={() => void nextLens()} title="Switch rear camera">
+              Lens {Math.max(0, lenses.findIndex((d) => d.deviceId === lens)) + 1}/{lenses.length}
+            </button>
+          )}
           {torchable && (
             <button className="vf-chip" onClick={toggleTorch} aria-pressed={torch}>
               {torch ? '🔦 On' : '🔦 Off'}
