@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { cameraSupported } from '../lib/camera';
-import { Viewfinder } from './Viewfinder';
+import { CameraPanel } from './CameraPanel';
 
 interface Props {
   onFiles: (files: File[]) => void;
@@ -17,15 +16,11 @@ interface Props {
 export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Props) {
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
-  const [framing, setFraming] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const systemCameraRef = useRef<HTMLInputElement>(null);
 
   // The way out of the in-app camera is the one that always worked.
-  const useSystemCamera = () => {
-    setFraming(false);
-    systemCameraRef.current?.click();
-  };
+  const useSystemCamera = () => systemCameraRef.current?.click();
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -60,7 +55,12 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
         onFiles(Array.from(e.dataTransfer.files));
       }}
     >
+      {/* The reason the app exists comes first, already looking at the world. */}
+      <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} />
+
       {preview && <img className="preview" src={preview} alt="" />}
+
+      <div className="or">or</div>
 
       <textarea
         className="universal"
@@ -84,37 +84,10 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
         }}
       />
 
-      {framing && (
-        <Viewfinder
-          onShots={(images, warning) => {
-            setFraming(false);
-            onShots(images, warning);
-          }}
-          onClose={() => setFraming(false)}
-          onSystemCamera={useSystemCamera}
-        />
-      )}
-
       <div className="drop-actions">
         {/* Pointing a camera at a poster is what this app is for, so it is the
             one control that gets the weight. */}
-        {cameraSupported() ? (
-          <button className="primary button" onClick={() => setFraming(true)} title="Photograph a poster">
-            📷 Camera
-          </button>
-        ) : (
-          <label className="primary button" title="Photograph a poster">
-            📷 Camera
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
-            />
-          </label>
-        )}
-        {/* Always present, so the viewfinder has something to hand back to. */}
+        {/* Always present, so the panel has something to hand back to. */}
         <input
           ref={systemCameraRef}
           type="file"

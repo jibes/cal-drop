@@ -30,10 +30,12 @@ paste / drop ───┘                                │                    
 
 - **One input** takes all of it: paste, drop, type, shoot, or share. Whether
   something is a link, plain text, an image or a PDF is the app's problem.
-- **The camera is in the app.** Tapping Camera opens a viewfinder with a
-  framing guide rather than handing off to the camera app, so there is no app
-  switch, no confirmation step, and no copy of every poster left in the camera
-  roll. Several boards of a festival programme can be shot in a row and read as
+- **The camera is the first screen.** It is already looking at the world when
+  the app opens, so photographing a poster is one tap on the shutter — no
+  button to find, no app switch, no confirmation step, and no copy of every
+  poster left in the camera roll. It opens unasked only once the browser has
+  granted it; a first visit gets a button rather than an ambush, and turning it
+  off is remembered. Several boards of a festival programme can be shot in a row and read as
   one. Where `ImageCapture` exists the photo comes from the device's still
   pipeline; elsewhere it is a video frame, and the app says so if that comes
   out too soft to read. The system camera stays one tap away inside the
