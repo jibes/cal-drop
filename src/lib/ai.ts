@@ -21,8 +21,13 @@ Rules:
  * json_object asks for "some JSON" and the plain rung asks for nothing at all.
  * Without the shape spelled out, a model answers in prose or keeps writing
  * until it hits the token cap, which is both unparseable and the most
- * expensive way to fail. So every rung below the first states the shape in
- * words.
+ * expensive way to fail.
+ *
+ * Even the tools rung needs it. A tool definition is only a request: a model
+ * that cannot call tools — most open-weight vision models, Gemma among them —
+ * accepts the parameter, ignores it, and answers in prose, which arrives as a
+ * perfectly successful response that will not parse. So the shape is stated in
+ * words on every rung, and the schema on the rung that can carry one.
  */
 const JSON_SHAPE = `Answer with JSON and nothing else — no prose before or after it, no markdown fence.
 
@@ -218,7 +223,11 @@ function parseJson(content: string): { events?: RawEvent[] } {
   } catch {
     const start = cleaned.indexOf('{');
     const end = cleaned.lastIndexOf('}');
-    if (start === -1 || end <= start) throw new Error('The model did not return JSON.');
+    if (start === -1 || end <= start) {
+      throw new Error(
+        `The model answered in prose rather than JSON: "${cleaned.slice(0, 160).replace(/\s+/g, ' ')}"`,
+      );
+    }
     return JSON.parse(cleaned.slice(start, end + 1));
   }
 }
@@ -387,8 +396,7 @@ export function requestBody(content: string | ContentPart[], attempt = remembere
 }
 
 function messagesFor(rung: Rung, content: string | ContentPart[]) {
-  const instructions =
-    rung.structured === 'tools' ? SYSTEM_PROMPT : `${SYSTEM_PROMPT}\n\n${JSON_SHAPE}`;
+  const instructions = `${SYSTEM_PROMPT}\n\n${JSON_SHAPE}`;
   if (rung.system === 'role') {
     return [
       { role: 'system', content: instructions },
@@ -408,7 +416,7 @@ async function callModel(
   settings: Settings,
   attempt: number,
   options: ExtractOptions,
-): Promise<string> {
+): Promise<{ text: string; attempt: number }> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -450,10 +458,9 @@ async function callModel(
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
   const { text, raw, error } = await readStream(res.body, options.onProgress);
-  if (text.trim()) {
-    rememberRung(attempt);
-    return text;
-  }
+  // Whether this rung actually worked is not known until the answer parses,
+  // so the caller decides what to remember.
+  if (text.trim()) return { text, attempt };
 
   // Nothing usable came back. That covers a refusal delivered as an event and
   // a server that accepts a parameter then ignores it — neither shows up in
@@ -475,10 +482,27 @@ async function runPass(
   withImages: boolean,
   options: ExtractOptions,
 ): Promise<EventDraft[]> {
-  const raw = await callModel(buildUserContent(source, withImages), settings, rememberedRung(), options);
-  const parsed = parseJson(raw);
-  const events = Array.isArray(parsed.events) ? parsed.events : [];
-  return events.map(toDraft).filter((e) => e.startDate);
+  const content = buildUserContent(source, withImages);
+  let attempt = rememberedRung();
+  let last: Error | undefined;
+
+  // A 200 carrying prose is the other way a rung fails, and the only way a
+  // model that ignores tools or response_format can fail: nothing in the
+  // status or the stream says so, only the answer not parsing. So an
+  // unparseable answer costs a rung, exactly as a refusal does.
+  for (;;) {
+    const answer = await callModel(content, settings, attempt, options);
+    try {
+      const parsed = parseJson(answer.text);
+      rememberRung(answer.attempt);
+      const events = Array.isArray(parsed.events) ? parsed.events : [];
+      return events.map(toDraft).filter((e) => e.startDate);
+    } catch (err) {
+      last = err as Error;
+      if (answer.attempt + 1 >= LADDER.length) throw last;
+      attempt = answer.attempt + 1;
+    }
+  }
 }
 
 /**
@@ -502,10 +526,17 @@ export async function extractEvents(
   } catch (err) {
     if ((err as Error).name === 'AbortError' || source.images.length === 0) throw err;
     // Text just worked for other sources, so a failure only on the pass that
-    // carries pictures points at the model rather than at this request.
+    // carries pictures points at the model rather than at this request. Which
+    // model, though, depends on how it failed: a refusal means the images were
+    // not accepted, while an answer in prose means they were read by a model
+    // that cannot be made to answer in JSON.
+    const message = (err as Error).message;
     throw new Error(
-      `${(err as Error).message}\n\nThis looks like the model behind the endpoint not accepting images. ` +
-        'Pasted text and links still work; photos and scanned PDFs need a vision-capable model.',
+      message.includes('in prose')
+        ? `${message}\n\nThe model reading the photo answered in words instead of data. ` +
+            'Pasted text and links still work; a photo needs a vision model that can follow a JSON format.'
+        : `${message}\n\nThis looks like the model behind the endpoint not accepting images. ` +
+            'Pasted text and links still work; photos and scanned PDFs need a vision-capable model.',
     );
   }
 }
