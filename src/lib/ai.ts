@@ -171,6 +171,10 @@ function rungOrder(shape: Shape): number[] {
 /** A rung that did not work. The next one might, so this is not the answer. */
 class RungError extends Error {}
 
+/** The answer was cut off in transit. The shape of the request was not the
+ *  problem, so the same rung is worth one more try by another route. */
+class TransportError extends Error {}
+
 export interface ExtractOptions {
   signal?: AbortSignal;
   /** Called with the best-known title/date while the response is still arriving. */
@@ -326,7 +330,7 @@ function fromCompletion(raw: string): string {
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onProgress?: ExtractOptions['onProgress'],
-): Promise<{ text: string; raw: string; error: string }> {
+): Promise<{ text: string; raw: string; error: string; broken: boolean }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -335,10 +339,23 @@ async function readStream(
   let error = '';
   let lastPreview = '';
 
+  let broken = false;
+
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
+    let step: ReadableStreamReadResult<Uint8Array>;
+    try {
+      step = await reader.read();
+    } catch (err) {
+      // The connection died mid-answer. Chrome words this "network error",
+      // which reads like the request never left — it did, and what arrived
+      // before the break may even be a whole answer.
+      if ((err as Error).name === 'AbortError') throw err;
+      broken = true;
+      break;
+    }
+    if (step.done) break;
+    const { value } = step;
+    const chunk = decoder.decode(value!, { stream: true });
     raw += chunk;
     buffer += chunk;
 
@@ -372,7 +389,7 @@ async function readStream(
     }
   }
   // An answer that never streamed is still an answer.
-  return { text: out.trim() ? out : fromCompletion(raw), raw, error };
+  return { text: out.trim() ? out : fromCompletion(raw), raw, error, broken };
 }
 
 /**
@@ -389,11 +406,15 @@ const MAX_OUTPUT_TOKENS = 2000;
  * would drift, and did: without the structured-output constraint the model
  * answered at length and the measurement was of something the app never sends.
  */
-export function requestBody(content: string | ContentPart[], attempt = rememberedRung('text')) {
+export function requestBody(
+  content: string | ContentPart[],
+  attempt = rememberedRung('text'),
+  stream = true,
+) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   return {
     // No model: the endpoint decides which one answers.
-    stream: true,
+    stream,
     max_tokens: MAX_OUTPUT_TOKENS,
     messages: messagesFor(rung, content),
     ...(rung.temperature ? { temperature: 0 } : {}),
@@ -449,7 +470,8 @@ async function callModel(
   settings: Settings,
   attempt: number,
   options: ExtractOptions,
-): Promise<string> {
+  stream = true,
+): Promise<{ text: string; broken: boolean }> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -462,7 +484,7 @@ async function callModel(
         'Content-Type': 'application/json',
         ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
-      body: JSON.stringify(requestBody(content, attempt)),
+      body: JSON.stringify(requestBody(content, attempt, stream)),
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
@@ -491,8 +513,21 @@ async function callModel(
 
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
-  const { text, raw, error } = await readStream(res.body, options.onProgress);
-  if (text.trim()) return text;
+  const { text, raw, error, broken } = await readStream(res.body, options.onProgress);
+  // A broken stream can still leave a whole answer behind, and often leaves
+  // half of one — which only the parse can tell apart, so it travels with it.
+  if (text.trim()) return { text, broken };
+
+  // Cut off with nothing to show for it. A long-lived response carrying a
+  // photo is the one most likely to be dropped between the provider, the
+  // endpoint and a phone, and none of that is the request's fault.
+  if (broken) {
+    throw new TransportError(
+      stream
+        ? 'The connection dropped while the answer was arriving.'
+        : 'The connection dropped before the answer arrived.',
+    );
+  }
 
   // Nothing usable came back. That covers a refusal delivered as an event and
   // a server that accepts a parameter then ignores it — neither shows up in
@@ -521,21 +556,53 @@ async function runPass(
   // answering in prose that will not parse; none of those is the endpoint's
   // final word while a rung remains untried.
   for (const attempt of rungOrder(shape)) {
-    let answer: string;
+    /** One rung, by both routes: streamed, then — if the line broke rather
+     *  than the request being wrong — whole, which needs the connection to
+     *  survive only the delivery instead of the whole generation. */
+    const tryRung = async (): Promise<EventDraft[]> => {
+      let broken = false;
+      for (const stream of [true, false]) {
+        let answer: { text: string; broken: boolean };
+        try {
+          answer = await callModel(content, settings, attempt, options, stream);
+        } catch (err) {
+          if (err instanceof TransportError) {
+            broken = true;
+            last = err;
+            continue;
+          }
+          // Keep what the endpoint said: if no rung works, it is the answer.
+          if (err instanceof RungError) last = err;
+          throw err;
+        }
+        try {
+          const parsed = parseJson(answer.text);
+          rememberRung(shape, attempt);
+          const events = Array.isArray(parsed.events) ? parsed.events : [];
+          return events.map(toDraft).filter((e) => e.startDate);
+        } catch (err) {
+          last = err as Error;
+          // Half an answer is not the rung's fault; a whole one that will not
+          // parse is, and asking again the same way would only repeat it.
+          if (!answer.broken) throw new RungError(last.message);
+          broken = true;
+        }
+      }
+      // Said in the words of what went wrong, not of the half-answer it left.
+      if (broken) {
+        last = new TransportError('The connection dropped while the answer was arriving.');
+        throw last;
+      }
+      throw new RungError(last?.message ?? 'That way of asking got nothing back.');
+    };
+
     try {
-      answer = await callModel(content, settings, attempt, options);
+      return await tryRung();
     } catch (err) {
-      if (!(err instanceof RungError)) throw err;
-      last = err;
-      continue;
-    }
-    try {
-      const parsed = parseJson(answer);
-      rememberRung(shape, attempt);
-      const events = Array.isArray(parsed.events) ? parsed.events : [];
-      return events.map(toDraft).filter((e) => e.startDate);
-    } catch (err) {
-      last = err as Error;
+      // A different shape is worth trying; a connection that dropped twice is
+      // not, and a photo is too big to keep uploading on the off chance.
+      if (err instanceof RungError) continue;
+      throw err;
     }
   }
 
@@ -568,6 +635,12 @@ export async function extractEvents(
     // not accepted, while an answer in prose means they were read by a model
     // that cannot be made to answer in JSON.
     const message = (err as Error).message;
+    if (message.includes('connection dropped')) {
+      throw new Error(
+        `${message}\n\nA photo is the largest thing this app sends, so it is the one a shaky ` +
+          'connection loses. Try again, or use the text if you have it.',
+      );
+    }
     throw new Error(
       message.includes('in prose')
         ? `${message}\n\nThe model reading the photo answered in words instead of data. ` +
