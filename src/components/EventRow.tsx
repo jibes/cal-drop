@@ -6,6 +6,10 @@ import type { EventDraft } from '../lib/types';
 
 interface Props {
   event: EventDraft;
+  /** Several events were found, so which ones to act on is a real question. */
+  selectable: boolean;
+  selected: boolean;
+  onToggle: () => void;
   onChange: (event: EventDraft) => void;
   onRemove: () => void;
 }
@@ -43,7 +47,42 @@ export function CalendarFile({ events }: { events: EventDraft[] }) {
   );
 }
 
-export function EventRow({ event, onChange, onRemove }: Props) {
+/**
+ * Where a set of events can go. A calendar file takes as many as you like; the
+ * Google and Outlook links each describe a single event, which is a limit of
+ * those URLs and not a choice — so with several selected only the file can
+ * carry them all.
+ */
+export function Destinations({ events }: { events: EventDraft[] }) {
+  const single = events.length === 1 ? events[0] : null;
+  const onlyOne = 'Google and Outlook take one event at a time';
+
+  return (
+    <div className="card-actions">
+      <CalendarFile events={events} />
+      {single ? (
+        <a className="button" href={googleCalendarUrl(single)} target="_blank" rel="noreferrer">
+          Google
+        </a>
+      ) : (
+        <button className="button" disabled title={onlyOne}>
+          Google
+        </button>
+      )}
+      {single ? (
+        <a className="button" href={outlookCalendarUrl(single)} target="_blank" rel="noreferrer">
+          Outlook
+        </a>
+      ) : (
+        <button className="button" disabled title={onlyOne}>
+          Outlook
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function EventRow({ event, selectable, selected, onToggle, onChange, onRemove }: Props) {
   const [open, setOpen] = useState(() => needsAttention(event));
 
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) =>
@@ -53,9 +92,24 @@ export function EventRow({ event, onChange, onRemove }: Props) {
   const caveat = deeplinkCaveat(event);
 
   return (
-    <article className={`card${needsAttention(event) ? ' attention' : ''}`}>
+    <article
+      className={`card${needsAttention(event) ? ' attention' : ''}${
+        selectable && !selected ? ' deselected' : ''
+      }`}
+    >
       <div className="summary">
-        <h2>{event.title}</h2>
+        <h2>
+          {selectable && (
+            <input
+              type="checkbox"
+              className="pick"
+              checked={selected}
+              onChange={onToggle}
+              aria-label={`Include ${event.title}`}
+            />
+          )}
+          {event.title}
+        </h2>
         <p className="when">
           {formatWhen(event)}
           {repeat && <span className="repeat"> · {repeat}</span>}
@@ -70,15 +124,7 @@ export function EventRow({ event, onChange, onRemove }: Props) {
       </div>
 
       {/* Three ways to the same place, none of them this app's preference. */}
-      <div className="card-actions">
-        <CalendarFile events={[event]} />
-        <a className="button" href={googleCalendarUrl(event)} target="_blank" rel="noreferrer">
-          Google
-        </a>
-        <a className="button" href={outlookCalendarUrl(event)} target="_blank" rel="noreferrer">
-          Outlook
-        </a>
-      </div>
+      <Destinations events={[event]} />
 
       <div className="card-actions secondary">
         <button className="ghost small" onClick={() => setOpen((v) => !v)}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarFile, EventRow } from './components/EventRow';
+import { Destinations, EventRow } from './components/EventRow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
@@ -13,6 +13,9 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [events, setEvents] = useState<EventDraft[]>([]);
+  // Everything found is wanted until said otherwise; a poster listing six
+  // events usually means six events, not a menu to pick one from.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState('');
   const [glimpse, setGlimpse] = useState('');
   const [error, setError] = useState('');
@@ -122,6 +125,10 @@ export default function App() {
     });
   }, [handleFiles, handleText]);
 
+  const chosen = events.filter((event) => !excluded.has(event.id));
+  const toggleAll = () =>
+    setExcluded(chosen.length === events.length ? new Set(events.map((e) => e.id)) : new Set());
+
   return (
     <div className="app">
       <header className="top">
@@ -147,9 +154,17 @@ export default function App() {
       )}
 
       {events.length > 1 && (
-        <div className="bulk">
-          <CalendarFile events={events} />
-        </div>
+        <section className="bulk">
+          <div className="bulk-head">
+            <span>
+              {chosen.length} of {events.length} selected
+            </span>
+            <button className="ghost small" onClick={toggleAll}>
+              {chosen.length === events.length ? 'Select none' : 'Select all'}
+            </button>
+          </div>
+          <Destinations events={chosen} />
+        </section>
       )}
 
       <div className="results">
@@ -157,6 +172,16 @@ export default function App() {
           <EventRow
             key={event.id}
             event={event}
+            selectable={events.length > 1}
+            selected={!excluded.has(event.id)}
+            onToggle={() =>
+              setExcluded((prev) => {
+                const next = new Set(prev);
+                if (next.has(event.id)) next.delete(event.id);
+                else next.add(event.id);
+                return next;
+              })
+            }
             onChange={(next) => setEvents((prev) => prev.map((e) => (e.id === next.id ? next : e)))}
             onRemove={() => setEvents((prev) => prev.filter((e) => e.id !== event.id))}
           />
