@@ -462,6 +462,51 @@ a.button { text-decoration: none; display: inline-block; }
   text-align: center;
 }
 
+/* ---- what is on the clipboard ---- */
+
+.clipboard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.clipboard.ask { justify-content: center; }
+
+.clip-icon { flex: 0 0 auto; font-size: 15px; }
+
+.clip-thumb {
+  flex: 0 0 auto;
+  height: 34px;
+  width: 34px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+/* One line of it: enough to recognise, not enough to become the page. */
+.clip-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clip-go {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* Separates the camera from the other ways in, without a heavy rule. */
 .or {
   display: flex;

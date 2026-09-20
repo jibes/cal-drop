@@ -30,6 +30,10 @@ paste / drop ───┘                                │                    
 
 - **One input** takes all of it: paste, drop, type, shoot, or share. Whether
   something is a link, plain text, an image or a PDF is the app's problem.
+- **The clipboard is shown, not guessed at.** Where the browser permits reading
+  it, whatever was copied — poster text, a link, a screenshot — appears as a
+  one-line preview with a tap to send it. Where it does not, the same button
+  reads and sends inside the tap, which is the only moment a browser allows.
 - **The camera is the first screen.** It is already looking at the world when
   the app opens, so photographing a poster is one tap on the shutter — no
   button to find, no app switch, no confirmation step, and no copy of every

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CameraPanel } from './CameraPanel';
+import { ClipboardCard } from './ClipboardCard';
 
 interface Props {
   onFiles: (files: File[]) => void;
@@ -61,6 +62,8 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
       {preview && <img className="preview" src={preview} alt="" />}
 
       <div className="or">or</div>
+
+      <ClipboardCard onText={onText} onShots={onShots} busy={busy} />
 
       <textarea
         className="universal"
