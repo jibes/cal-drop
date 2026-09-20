@@ -116,20 +116,26 @@ const LADDER: Rung[] = [
   { structured: 'none', system: 'merged', temperature: false },
 ];
 
-const MODE_KEY = 'caldrop.endpointMode.v2';
+/** What the request carries, which is the thing endpoints disagree about:
+ *  a picture is usually answered by a different model from the text. */
+type Shape = 'text' | 'image';
+
+const MODE_KEY = 'caldrop.endpointMode.v3';
 /** How long a learned rung is trusted. A server's quirks rarely change, but
  *  when they do — a model swapped behind the endpoint, a gateway upgraded —
  *  a remembered rung that never expires keeps paying for a workaround that is
- *  no longer needed: the plain rung sends no schema at all, so the model is
- *  free to ramble up to the token cap on every extraction. A day's memory
- *  costs one extra probe and heals by itself. */
+ *  no longer needed. A day's memory costs one extra probe and heals itself. */
 const MODE_TTL = 24 * 60 * 60 * 1000;
 
-/** The endpoint's quirks do not change between requests, so pay for finding
- *  them once and start there next time. */
-function rememberedRung(): number {
+/**
+ * The endpoint's quirks do not change between requests, so pay for finding
+ * them once and start there next time. Text and images are remembered apart:
+ * behind one endpoint there are usually two models, and what the text model
+ * accepts says nothing about what the vision model will.
+ */
+function rememberedRung(shape: Shape): number {
   try {
-    const stored = localStorage.getItem(MODE_KEY);
+    const stored = localStorage.getItem(`${MODE_KEY}.${shape}`);
     if (!stored) return 0;
     const { rung, at } = JSON.parse(stored) as { rung?: number; at?: number };
     if (!Number.isInteger(rung) || rung! < 0 || rung! >= LADDER.length) return 0;
@@ -140,13 +146,30 @@ function rememberedRung(): number {
   }
 }
 
-function rememberRung(i: number): void {
+function rememberRung(shape: Shape, i: number): void {
   try {
-    localStorage.setItem(MODE_KEY, JSON.stringify({ rung: i, at: Date.now() }));
+    localStorage.setItem(`${MODE_KEY}.${shape}`, JSON.stringify({ rung: i, at: Date.now() }));
   } catch {
     /* storage disabled; we just re-learn each time */
   }
 }
+
+/**
+ * Every rung, starting with the one that worked last time.
+ *
+ * The ladder used to be walked downwards only, which made a remembered rung a
+ * floor: having learned the bottom one for text, a photo that failed there had
+ * nowhere left to go and gave up after a single try — even though the rung
+ * above might be exactly what that model wants. Starting at the memory and
+ * wrapping keeps the saved probe without ever ruling a rung out.
+ */
+function rungOrder(shape: Shape): number[] {
+  const first = rememberedRung(shape);
+  return LADDER.map((_, i) => (first + i) % LADDER.length);
+}
+
+/** A rung that did not work. The next one might, so this is not the answer. */
+class RungError extends Error {}
 
 export interface ExtractOptions {
   signal?: AbortSignal;
@@ -189,18 +212,17 @@ function describeNetworkFailure(): string {
  */
 function buildUserContent(source: ExtractionSource, withImages: boolean): string | ContentPart[] {
   const today = new Date().toISOString().slice(0, 10);
-  const parts: ContentPart[] = [
-    {
-      type: 'text',
-      text: `Reference date (today): ${today}. Viewer timezone: ${localZone() || 'unknown'}. Source: ${source.label} (${source.kind}).\n\nExtract every event with its date.`,
-    },
-  ];
-  if (source.text.trim()) {
-    parts.push({ type: 'text', text: `--- source text ---\n${source.text.slice(0, 60000)}` });
-  }
-  if (!withImages || source.images.length === 0) {
-    return parts.map((part) => (part.type === 'text' ? part.text : '')).join('\n\n');
-  }
+  const preamble = `Reference date (today): ${today}. Viewer timezone: ${localZone() || 'unknown'}. Source: ${source.label} (${source.kind}).\n\nExtract every event with its date.`;
+  const body = source.text.trim() ? `${preamble}\n\n--- source text ---\n${source.text.slice(0, 60000)}` : preamble;
+
+  if (!withImages || source.images.length === 0) return body;
+
+  // One text part, then the pictures. Splitting the words across several parts
+  // is valid and widely accepted, but some providers answer a multi-part
+  // message with nothing at all, and an empty 200 is indistinguishable from a
+  // model that had nothing to say. The single part is the shape every server
+  // that takes images at all is known to take.
+  const parts: ContentPart[] = [{ type: 'text', text: body }];
   for (const url of source.images) parts.push({ type: 'image_url', image_url: { url } });
   return parts;
 }
@@ -367,7 +389,7 @@ const MAX_OUTPUT_TOKENS = 2000;
  * would drift, and did: without the structured-output constraint the model
  * answered at length and the measurement was of something the app never sends.
  */
-export function requestBody(content: string | ContentPart[], attempt = rememberedRung()) {
+export function requestBody(content: string | ContentPart[], attempt = rememberedRung('text')) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   return {
     // No model: the endpoint decides which one answers.
@@ -403,11 +425,22 @@ function messagesFor(rung: Rung, content: string | ContentPart[]) {
       { role: 'user', content },
     ];
   }
-  // No system turn: the instructions lead the user message instead.
-  const merged =
-    typeof content === 'string'
-      ? `${instructions}\n\n---\n\n${content}`
-      : [{ type: 'text' as const, text: instructions }, ...content];
+  // No system turn: the instructions lead the user message instead. With a
+  // picture attached they lead its text part rather than becoming a second
+  // one — the message keeps the single-text-part shape that every server
+  // taking images is known to accept.
+  if (typeof content === 'string') {
+    return [{ role: 'user', content: `${instructions}\n\n---\n\n${content}` }];
+  }
+  const first = content.findIndex((part) => part.type === 'text');
+  const merged: ContentPart[] =
+    first === -1
+      ? [{ type: 'text', text: instructions }, ...content]
+      : content.map((part, i) =>
+          i === first && part.type === 'text'
+            ? { type: 'text', text: `${instructions}\n\n---\n\n${part.text}` }
+            : part,
+        );
   return [{ role: 'user', content: merged }];
 }
 
@@ -416,7 +449,7 @@ async function callModel(
   settings: Settings,
   attempt: number,
   options: ExtractOptions,
-): Promise<{ text: string; attempt: number }> {
+): Promise<string> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -448,9 +481,10 @@ async function callModel(
       throw new Error(message || 'Wrong or missing access code. Enter it in Settings.');
     }
     if (res.status === 429 || res.status === 500) throw new Error(message || `HTTP ${res.status}`);
-    // Not every OpenAI-compatible server implements tool calling; fall back once.
-    if (attempt + 1 < LADDER.length && (res.status === 400 || res.status === 404 || res.status === 422)) {
-      return callModel(content, settings, attempt + 1, options);
+    // Not every server takes tools, a response_format or a system turn, and
+    // the ones that do not say so here. Another rung may suit them better.
+    if (res.status === 400 || res.status === 404 || res.status === 422) {
+      throw new RungError(message || `The endpoint rejected that request (HTTP ${res.status}).`);
     }
     throw new Error(message || `API error ${res.status}: ${detail || res.statusText}`);
   }
@@ -458,16 +492,12 @@ async function callModel(
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
   const { text, raw, error } = await readStream(res.body, options.onProgress);
-  // Whether this rung actually worked is not known until the answer parses,
-  // so the caller decides what to remember.
-  if (text.trim()) return { text, attempt };
+  if (text.trim()) return text;
 
   // Nothing usable came back. That covers a refusal delivered as an event and
   // a server that accepts a parameter then ignores it — neither shows up in
   // the status — so give up one more assumption and try again.
-  if (attempt + 1 < LADDER.length) return callModel(content, settings, attempt + 1, options);
-
-  throw new Error(
+  throw new RungError(
     error
       ? `The model provider rejected the request: ${error}`
       : raw.trim()
@@ -482,27 +512,34 @@ async function runPass(
   withImages: boolean,
   options: ExtractOptions,
 ): Promise<EventDraft[]> {
+  const shape: Shape = withImages && source.images.length > 0 ? 'image' : 'text';
   const content = buildUserContent(source, withImages);
-  let attempt = rememberedRung();
   let last: Error | undefined;
 
-  // A 200 carrying prose is the other way a rung fails, and the only way a
-  // model that ignores tools or response_format can fail: nothing in the
-  // status or the stream says so, only the answer not parsing. So an
-  // unparseable answer costs a rung, exactly as a refusal does.
-  for (;;) {
-    const answer = await callModel(content, settings, attempt, options);
+  // Every rung gets its turn. A rung fails by being refused, by answering with
+  // nothing, or — the only way a model that ignores tools can fail — by
+  // answering in prose that will not parse; none of those is the endpoint's
+  // final word while a rung remains untried.
+  for (const attempt of rungOrder(shape)) {
+    let answer: string;
     try {
-      const parsed = parseJson(answer.text);
-      rememberRung(answer.attempt);
+      answer = await callModel(content, settings, attempt, options);
+    } catch (err) {
+      if (!(err instanceof RungError)) throw err;
+      last = err;
+      continue;
+    }
+    try {
+      const parsed = parseJson(answer);
+      rememberRung(shape, attempt);
       const events = Array.isArray(parsed.events) ? parsed.events : [];
       return events.map(toDraft).filter((e) => e.startDate);
     } catch (err) {
       last = err as Error;
-      if (answer.attempt + 1 >= LADDER.length) throw last;
-      attempt = answer.attempt + 1;
     }
   }
+
+  throw last ?? new Error('The endpoint gave no usable answer.');
 }
 
 /**
@@ -535,8 +572,9 @@ export async function extractEvents(
       message.includes('in prose')
         ? `${message}\n\nThe model reading the photo answered in words instead of data. ` +
             'Pasted text and links still work; a photo needs a vision model that can follow a JSON format.'
-        : `${message}\n\nThis looks like the model behind the endpoint not accepting images. ` +
-            'Pasted text and links still work; photos and scanned PDFs need a vision-capable model.',
+        : `${message}\n\nAll four ways of asking were tried and the picture got nothing back from any ` +
+            'of them, so this is the model behind the endpoint rather than the request. Pasted text and ' +
+            'links still work; photos and scanned PDFs need a vision-capable model.',
     );
   }
 }
