@@ -1,5 +1,14 @@
+import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { cameraSupported, closeCamera, hasTorch, openCamera, setTorch, takeShot } from '../lib/camera';
+import {
+  cameraSupported,
+  closeCamera,
+  hasTorch,
+  openCamera,
+  preferMainRearCamera,
+  setTorch,
+  takeShot,
+} from '../lib/camera';
 import { SHARP_ENOUGH, type Prepared } from '../lib/image';
 
 interface Props {
@@ -49,7 +58,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
   /** The camera's own shape, so the preview shows the frame that gets sent. */
-  const [ratio, setRatio] = useState('4 / 3');
+  const [ratio, setRatio] = useState(4 / 3);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE) === 'off';
@@ -77,7 +86,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
     if (streamRef.current) return;
     setError('');
     try {
-      const stream = await openCamera();
+      const stream = await preferMainRearCamera(await openCamera());
       streamRef.current = stream;
       setTorchable(hasTorch(stream));
       setLive(true);
@@ -193,7 +202,9 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
 
   return (
     <div className="camera">
-      <div className="stage" style={{ aspectRatio: ratio }}>
+      {/* Both of the stage's dimensions are derived from this, so the box
+          always matches the camera instead of letterboxing when one clamps. */}
+      <div className="stage" style={{ '--ar': ratio } as React.CSSProperties}>
         <video
           ref={videoRef}
           playsInline
@@ -202,7 +213,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
           onLoadedMetadata={(e) => {
             const video = e.currentTarget;
             if (video.videoWidth && video.videoHeight) {
-              setRatio(`${video.videoWidth} / ${video.videoHeight}`);
+              setRatio(video.videoWidth / video.videoHeight);
             }
           }}
         />

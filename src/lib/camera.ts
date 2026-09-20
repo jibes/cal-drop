@@ -30,14 +30,55 @@ export async function openCamera(): Promise<MediaStream> {
     // and the preview shows exactly what will be sent, so a wide frame wastes
     // most of it. Still capture is unaffected — ImageCapture returns the
     // sensor's own photo whatever the preview is set to.
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 2560 },
-      height: { ideal: 1920 },
-      aspectRatio: { ideal: 4 / 3 },
-    },
+    video: { facingMode: { ideal: 'environment' }, ...CONSTRAINTS },
     audio: false,
   });
+}
+
+const CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 2560 },
+  height: { ideal: 1920 },
+  aspectRatio: { ideal: 4 / 3 },
+};
+
+/**
+ * Prefer the ordinary rear camera over the ultra-wide.
+ *
+ * facingMode says which way a camera points, not which of several it should
+ * be, and a phone with three rear lenses may hand back the ultra-wide — which
+ * puts the poster small in a distorted frame, the opposite of what reading
+ * small print needs. Labels only become readable once permission is granted,
+ * which is why this runs after the first stream rather than instead of it.
+ */
+export async function preferMainRearCamera(stream: MediaStream): Promise<MediaStream> {
+  const [track] = stream.getVideoTracks();
+  const current = track?.getSettings().deviceId;
+
+  let rear: MediaDeviceInfo[];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    rear = devices.filter((d) => d.kind === 'videoinput' && /back|rear|environment/i.test(d.label));
+  } catch {
+    return stream;
+  }
+  // Without labels there is no way to tell one camera from another, and
+  // guessing risks landing on the front one.
+  if (rear.length < 2) return stream;
+
+  const main =
+    rear.find((d) => !/wide|ultra|tele|macro|depth|zoom|monochrome/i.test(d.label)) ?? rear[0];
+  if (!main || main.deviceId === current) return stream;
+
+  try {
+    const better = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: main.deviceId }, ...CONSTRAINTS },
+      audio: false,
+    });
+    closeCamera(stream);
+    return better;
+  } catch {
+    return stream;
+  }
 }
 
 export function closeCamera(stream: MediaStream | null): void {

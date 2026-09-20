@@ -34,6 +34,10 @@
 
 body {
   margin: 0;
+  /* The viewport with the browser's bars showing, so a first screen laid out
+     to fit does not grow taller than the space it will actually have. */
+  min-height: 100vh;
+  min-height: 100svh;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -44,7 +48,8 @@ body {
 .app {
   max-width: 640px;
   margin: 0 auto;
-  padding: 24px 16px 56px;
+  /* Room for a bottom bar that appears and disappears as the page scrolls. */
+  padding: 20px 16px calc(40px + env(safe-area-inset-bottom));
 }
 
 .top {
@@ -53,7 +58,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   /* The title and the thing you came to use were nearly touching. */
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 h1 {
@@ -346,13 +351,21 @@ a.button { text-decoration: none; display: inline-block; }
 
 .camera.off { display: flex; justify-content: center; padding: 6px 0 2px; }
 
-/* The camera's own shape, capped so the other ways in stay on screen. What is
-   shown has to be what is sent: cropping the preview would mean framing one
-   picture and sending another. */
+/* The camera's own shape, capped so the other ways in stay on screen.
+   What is shown has to be what is sent, so the preview is never cropped, and
+   both dimensions come from one width — clamping either alone would letterbox
+   a frame that is supposed to match the camera exactly.
+   svh is the viewport with the browser's bars showing, the smallest it gets,
+   and the subtraction is the rest of the first screen: nothing falls off when
+   the bars appear. */
 .stage {
+  --stage-h: min(32svh, max(116px, calc(100svh - 430px)));
+  --stage-w: min(calc(100vw - 60px), 612px, calc(var(--stage-h) * var(--ar, 1.3333)));
+
   position: relative;
-  aspect-ratio: 4 / 3;
-  max-height: 38vh;
+  width: var(--stage-w);
+  height: calc(var(--stage-w) / var(--ar, 1.3333));
+  margin-inline: auto;
   border-radius: 12px;
   overflow: hidden;
   background: #000;
