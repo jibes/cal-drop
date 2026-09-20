@@ -142,11 +142,11 @@ const MODE_TTL = 24 * 60 * 60 * 1000;
  * behind one endpoint there are usually two models, and what the text model
  * accepts says nothing about what the vision model will.
  */
-/** Where to start when nothing has been learned yet. A tool call is the most
- *  reliable way to get JSON out of a text model and the least likely thing a
- *  vision model can do — most open-weight ones have no tool calling at all —
- *  so a picture starts one rung down and reaches the tool call last. */
-const FIRST_RUNG: Record<Shape, number> = { text: 0, image: 1 };
+/** Where to start when nothing has been learned yet. The guess that a vision
+ *  model cannot call tools was wrong about this endpoint: the request that
+ *  read photos for weeks was a tool call with a picture attached. So both
+ *  shapes start at the top, and the ring finds the rest. */
+const FIRST_RUNG: Record<Shape, number> = { text: 0, image: 0 };
 
 function rememberedRung(shape: Shape): number {
   try {
@@ -440,7 +440,6 @@ async function readStream(
  * unconstrained, one of them returned 2787 tokens for a single event, all of
  * it paid for and none of it wanted.
  */
-const MAX_OUTPUT_TOKENS = 2000;
 
 /**
  * Exactly what the app asks the endpoint, exported so that measuring the cost
@@ -456,8 +455,15 @@ export function requestBody(
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   return {
     // No model: the endpoint decides which one answers.
+    //
+    // No max_tokens either. It was added to cap a runaway answer, and it is
+    // the only parameter this request gained between photos working and
+    // photos coming back empty — from a provider whose own words were "likely
+    // an unsupported request parameter that the provider silently dropped".
+    // The cap has since been doing nothing anyway: the prompt tells the model
+    // to stop at the closing brace, and measured runs finish at about 1300
+    // tokens. A cap that never binds is not worth a silent empty answer.
     stream,
-    max_tokens: MAX_OUTPUT_TOKENS,
     messages: messagesFor(rung, content),
     ...(rung.temperature ? { temperature: 0 } : {}),
     ...(rung.structured === 'tools'

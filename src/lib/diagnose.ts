@@ -103,6 +103,29 @@ const PROBES: Probe[] = [
       ],
     },
   },
+  // The exact combination that stopped working: a picture, a tool call, and a
+  // cap on the answer. Each of the three passes on its own, which is why this
+  // report kept saying everything was fine.
+  {
+    name: 'image + tools + max_tokens',
+    body: {
+      max_tokens: 2000,
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'say_colour',
+            description: 'Say the colour.',
+            parameters: { type: 'object', properties: { colour: { type: 'string' } }, required: ['colour'] },
+          },
+        },
+      ],
+      tool_choice: { type: 'function', function: { name: 'say_colour' } },
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: DATA_URL } }] },
+      ],
+    },
+  },
   {
     name: 'image + tools',
     body: {
