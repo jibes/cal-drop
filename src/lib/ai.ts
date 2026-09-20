@@ -16,6 +16,22 @@ Rules:
 - source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it.
 - Never invent a date. If no date can be read, return an empty list.`;
 
+/**
+ * Only the tools rung carries the schema in the request; response_format
+ * json_object asks for "some JSON" and the plain rung asks for nothing at all.
+ * Without the shape spelled out, a model answers in prose or keeps writing
+ * until it hits the token cap, which is both unparseable and the most
+ * expensive way to fail. So every rung below the first states the shape in
+ * words.
+ */
+const JSON_SHAPE = `Answer with JSON and nothing else — no prose before or after it, no markdown fence.
+
+The JSON is one object: {"events": [ ... ]}, one entry per event, an empty array if there is none. Each entry has:
+- title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1) — always present
+- start_time, end_date, end_time, location, timezone, rrule, description, url, notes — strings, "" when unknown
+
+Stop as soon as the closing brace is written.`;
+
 const EVENT_SCHEMA = {
   type: 'object',
   properties: {
@@ -95,14 +111,25 @@ const LADDER: Rung[] = [
   { structured: 'none', system: 'merged', temperature: false },
 ];
 
-const MODE_KEY = 'caldrop.endpointMode.v1';
+const MODE_KEY = 'caldrop.endpointMode.v2';
+/** How long a learned rung is trusted. A server's quirks rarely change, but
+ *  when they do — a model swapped behind the endpoint, a gateway upgraded —
+ *  a remembered rung that never expires keeps paying for a workaround that is
+ *  no longer needed: the plain rung sends no schema at all, so the model is
+ *  free to ramble up to the token cap on every extraction. A day's memory
+ *  costs one extra probe and heals by itself. */
+const MODE_TTL = 24 * 60 * 60 * 1000;
 
 /** The endpoint's quirks do not change between requests, so pay for finding
  *  them once and start there next time. */
 function rememberedRung(): number {
   try {
-    const i = Number(localStorage.getItem(MODE_KEY));
-    return Number.isInteger(i) && i >= 0 && i < LADDER.length ? i : 0;
+    const stored = localStorage.getItem(MODE_KEY);
+    if (!stored) return 0;
+    const { rung, at } = JSON.parse(stored) as { rung?: number; at?: number };
+    if (!Number.isInteger(rung) || rung! < 0 || rung! >= LADDER.length) return 0;
+    if (!Number.isFinite(at) || Date.now() - at! > MODE_TTL) return 0;
+    return rung!;
   } catch {
     return 0;
   }
@@ -110,7 +137,7 @@ function rememberedRung(): number {
 
 function rememberRung(i: number): void {
   try {
-    localStorage.setItem(MODE_KEY, String(i));
+    localStorage.setItem(MODE_KEY, JSON.stringify({ rung: i, at: Date.now() }));
   } catch {
     /* storage disabled; we just re-learn each time */
   }
@@ -360,17 +387,19 @@ export function requestBody(content: string | ContentPart[], attempt = remembere
 }
 
 function messagesFor(rung: Rung, content: string | ContentPart[]) {
+  const instructions =
+    rung.structured === 'tools' ? SYSTEM_PROMPT : `${SYSTEM_PROMPT}\n\n${JSON_SHAPE}`;
   if (rung.system === 'role') {
     return [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: instructions },
       { role: 'user', content },
     ];
   }
   // No system turn: the instructions lead the user message instead.
   const merged =
     typeof content === 'string'
-      ? `${SYSTEM_PROMPT}\n\n---\n\n${content}`
-      : [{ type: 'text' as const, text: SYSTEM_PROMPT }, ...content];
+      ? `${instructions}\n\n---\n\n${content}`
+      : [{ type: 'text' as const, text: instructions }, ...content];
   return [{ role: 'user', content: merged }];
 }
 
