@@ -362,7 +362,7 @@ a.button { text-decoration: none; display: inline-block; }
    and the subtraction is the rest of the first screen: nothing falls off when
    the bars appear. */
 .stage {
-  --stage-h: min(42svh, max(140px, calc(100svh - 345px)));
+  --stage-h: min(42svh, max(140px, calc(100svh - 400px)));
   --stage-w: min(calc(100vw - 60px), 612px, calc(var(--stage-h) * var(--ar, 1.3333)));
 
   position: relative;
@@ -552,4 +552,95 @@ a.button { text-decoration: none; display: inline-block; }
   border: 1px solid var(--warn);
   color: var(--text);
   font-size: 13px;
+}
+
+/* While something is being read.
+   The card is a fixed, small shape on purpose: the live camera it replaces is
+   the tallest thing on the first screen, and a full-size preview of the shot
+   in its place pushed the status and the results off the bottom. What is being
+   sent is worth seeing, but as a thumbnail — it is already taken. */
+.dropzone.working {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: left;
+}
+
+.work-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.work-thumb {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.work-thumb.glyph {
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+}
+
+.work-what { min-width: 0; }
+
+.work-stage {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+
+.work-glimpse {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Three steps, so the wait has a shape even before the model speaks. */
+.work-steps {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.work-steps li {
+  flex: 1;
+  border-top: 3px solid var(--line);
+  padding-top: 6px;
+  text-align: center;
+}
+
+.work-steps li.done { border-top-color: var(--accent); color: var(--text); }
+.work-steps li.now { border-top-color: var(--accent); color: var(--text); font-weight: 600; }
+.work-steps li.now { animation: pulse 1.4s ease-in-out infinite; }
+
+@keyframes pulse { 50% { opacity: 0.55; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .work-steps li.now { animation: none; }
+}
+
+/* A short screen — a small phone with both bars showing — cannot have
+   everything. What goes is what is only decoration: the footer's line and the
+   air around the "or". The camera, the clipboard and the two buttons stay. */
+@media (max-height: 640px) {
+  .foot { display: none; }
+  .or { margin: 6px 0; }
 }

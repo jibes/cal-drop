@@ -20,6 +20,8 @@ interface Props {
   /** The way out: the system camera, for when this one will not do. */
   onSystemCamera: () => void;
   busy: boolean;
+  /** How many results are on screen; above zero, the screen is for reading them. */
+  results: number;
 }
 
 const PREFERENCE = 'caldrop.camera.v1';
@@ -52,7 +54,10 @@ async function shouldAutoStart(): Promise<boolean> {
  * is only done unasked once the browser has already granted it — a first visit
  * gets a button to press instead of an ambush.
  */
-export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
+export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
+  /** Asked for again by hand, after standing down for a result. */
+  const [asked, setAsked] = useState(false);
+  const standDown = results > 0 && !asked;
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState(false);
@@ -137,7 +142,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
 
   // Start unasked only where the answer is already yes.
   useEffect(() => {
-    if (dismissed || !cameraSupported()) return;
+    if (dismissed || standDown || !cameraSupported()) return;
     let cancelled = false;
     void shouldAutoStart().then((yes) => {
       if (yes && !cancelled) void start();
@@ -145,13 +150,28 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [dismissed, start]);
+  }, [dismissed, standDown, start]);
+
+  /**
+   * Once an event is on screen, that is what the screen is for: dates to check,
+   * a title to fix, a calendar to send it to. A live viewfinder above all that
+   * is the tallest thing in the way of it, so the camera closes and leaves a
+   * button — one tap back to scanning, for when the next poster comes along.
+   * Each new result stands it down again, including one it just took.
+   */
+  useEffect(() => {
+    if (results > 0) setAsked(false);
+  }, [results]);
+
+  useEffect(() => {
+    if (standDown) stop();
+  }, [standDown, stop]);
 
   // A camera left running behind a switched-away tab costs battery for nothing.
   useEffect(() => {
     const onVisibility = () => {
       if (document.hidden) stop();
-      else if (!dismissed) {
+      else if (!dismissed && !standDown) {
         void shouldAutoStart().then((ok) => {
           if (ok) void start();
         });
@@ -162,7 +182,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
       document.removeEventListener('visibilitychange', onVisibility);
       stop();
     };
-  }, [dismissed, start, stop]);
+  }, [dismissed, standDown, start, stop]);
 
   const shoot = useCallback(async (): Promise<Prepared[]> => {
     const stream = streamRef.current;
@@ -213,18 +233,19 @@ export function CameraPanel({ onShots, onSystemCamera, busy }: Props) {
 
   if (!cameraSupported()) return null;
 
-  if (dismissed || (!live && !error)) {
+  if (dismissed || standDown || (!live && !error)) {
     return (
       <div className="camera off">
         <button
           className="primary button"
           onClick={() => {
             setDismissed(false);
+            setAsked(true);
             remember(false);
             void start();
           }}
         >
-          📷 Turn on the camera
+          {standDown ? '📷 Scan another' : '📷 Turn on the camera'}
         </button>
       </div>
     );

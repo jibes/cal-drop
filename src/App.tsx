@@ -38,7 +38,7 @@ export default function App() {
     setBusy(stage);
     try {
       const source = await build();
-      setBusy('Reading the dates…');
+      setBusy('Sending it to the model…');
       const found = await extractEvents(source, current, {
         signal: controller.signal,
         onProgress: ({ title, date }) => setGlimpse([title, date].filter(Boolean).join(' — ')),
@@ -165,15 +165,13 @@ export default function App() {
         onFiles={handleFiles}
         onText={handleText}
         onShots={handleShots}
-        busy={Boolean(busy)}
+        stage={busy}
+        glimpse={glimpse}
+        onCancel={() => abortRef.current?.abort()}
         preview={preview}
+        results={events.length}
       />
 
-      {busy && (
-        <p className="status" role="status">
-          <span className="spinner" /> {glimpse || busy}
-        </p>
-      )}
       {error && (
         <p className="error" role="alert">
           {error}

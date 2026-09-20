@@ -6,15 +6,33 @@ interface Props {
   onFiles: (files: File[]) => void;
   onText: (value: string) => void;
   onShots: (images: string[], warning: string) => void;
-  busy: boolean;
+  /** What is happening right now, in words; empty when nothing is. */
+  stage: string;
+  /** The first title the model has said, while the rest is still arriving. */
+  glimpse: string;
+  onCancel: () => void;
   preview: string;
+  /** How many results are on screen. */
+  results: number;
+}
+
+/** The steps a source goes through, so there is something to watch before the
+ *  model has said a word. */
+const STEPS = ['Preparing', 'Sending', 'Reading'] as const;
+
+/** Which step is under way. The stage text is the app's own wording, and the
+ *  first title arriving is proof the model is answering. */
+function stepAt(stage: string, glimpse: string): number {
+  if (glimpse) return 2;
+  return /sending/i.test(stage) ? 1 : 0;
 }
 
 /**
  * One target for everything. Deciding between "image", "PDF", "link" and "text"
  * is the app's job, not a choice to put in front of someone holding a phone.
  */
-export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Props) {
+export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results }: Props) {
+  const busy = Boolean(stage);
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -43,6 +61,49 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
     setTyping(false);
   };
 
+  /**
+   * While something is being read, this is all there is.
+   *
+   * The camera unmounts with it, which is the point: the live preview is the
+   * tallest thing on the screen and it has nothing left to show once the shot
+   * is taken — leaving it running pushed the status and the result off the
+   * bottom, and kept the camera warm for no reason. What replaces it is the
+   * same size every time: what was sent, small, and where it has got to.
+   */
+  if (busy) {
+    const at = stepAt(stage, glimpse);
+    return (
+      <section className="dropzone working" aria-busy="true">
+        <div className="work-row">
+          {preview ? (
+            <img className="work-thumb" src={preview} alt="What is being read" />
+          ) : (
+            <span className="work-thumb glyph" aria-hidden="true">
+              📄
+            </span>
+          )}
+          <div className="work-what">
+            <p className="work-stage" role="status">
+              {/* Once the model starts answering, saying "sending" is a lie. */}
+              <span className="spinner" /> {glimpse ? 'Reading the answer…' : stage}
+            </p>
+            {glimpse && <p className="work-glimpse">Found: {glimpse}</p>}
+          </div>
+        </div>
+        <ol className="work-steps">
+          {STEPS.map((label, i) => (
+            <li key={label} className={i < at ? 'done' : i === at ? 'now' : ''}>
+              {label}
+            </li>
+          ))}
+        </ol>
+        <button className="ghost small" onClick={onCancel}>
+          Cancel
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section
       ref={boxRef}
@@ -59,9 +120,7 @@ export function UniversalInput({ onFiles, onText, onShots, busy, preview }: Prop
       }}
     >
       {/* The reason the app exists comes first, already looking at the world. */}
-      <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} />
-
-      {preview && <img className="preview" src={preview} alt="" />}
+      <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} results={results} />
 
       <div className="or">or</div>
 
