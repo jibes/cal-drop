@@ -30,6 +30,14 @@ paste / drop ───┘                                │                    
 
 - **One input** takes all of it: paste, drop, type, shoot, or share. Whether
   something is a link, plain text, an image or a PDF is the app's problem.
+- **The camera is in the app.** Tapping Camera opens a viewfinder with a
+  framing guide rather than handing off to the camera app, so there is no app
+  switch, no confirmation step, and no copy of every poster left in the camera
+  roll. Several boards of a festival programme can be shot in a row and read as
+  one. Where `ImageCapture` exists the photo comes from the device's still
+  pipeline; elsewhere it is a video frame, and the app says so if that comes
+  out too soft to read. The system camera stays one tap away inside the
+  viewfinder, and is used outright where `getUserMedia` is unavailable.
 - **Three ways into a calendar, none of them preferred**: the calendar file
   served inline over https, a Google deep link and an Outlook one.
 

@@ -19,6 +19,8 @@ export default function App() {
   const [busy, setBusy] = useState('');
   const [glimpse, setGlimpse] = useState('');
   const [error, setError] = useState('');
+  /** Something worth knowing that did not stop the run — a soft photo, say. */
+  const [hint, setHint] = useState('');
   const [preview, setPreview] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const settingsRef = useRef(settings);
@@ -93,6 +95,25 @@ export default function App() {
     [run],
   );
 
+  /** Photographs taken in the app: already downscaled, so they skip file handling. */
+  const handleShots = useCallback(
+    (images: string[], warning: string) => {
+      if (images.length === 0) return;
+      setHint(warning);
+      setPreview(images[0]);
+      void run(
+        async () => ({
+          kind: 'image',
+          label: images.length === 1 ? 'photo' : `${images.length} photos`,
+          images,
+          text: '',
+        }),
+        images.length === 1 ? 'Reading the photo…' : `Reading ${images.length} photos…`,
+      );
+    },
+    [run],
+  );
+
   /** One entry point for typed, pasted and shared text: a link is just text that looks like one. */
   const handleText = useCallback(
     (value: string) => {
@@ -140,7 +161,13 @@ export default function App() {
         </button>
       </header>
 
-      <UniversalInput onFiles={handleFiles} onText={handleText} busy={Boolean(busy)} preview={preview} />
+      <UniversalInput
+        onFiles={handleFiles}
+        onText={handleText}
+        onShots={handleShots}
+        busy={Boolean(busy)}
+        preview={preview}
+      />
 
       {busy && (
         <p className="status" role="status">
@@ -150,6 +177,14 @@ export default function App() {
       {error && (
         <p className="error" role="alert">
           {error}
+        </p>
+      )}
+      {hint && !busy && (
+        <p className="hint-bar">
+          {hint}{' '}
+          <button className="ghost small" onClick={() => setHint('')}>
+            Dismiss
+          </button>
         </p>
       )}
 
