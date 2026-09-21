@@ -89,14 +89,12 @@ function eventLines(event: EventDraft): string[] {
   lines.push(`SUMMARY:${escapeText(event.title)}`);
   if (event.location) lines.push(`LOCATION:${escapeText(event.location)}`);
 
-  const description = [
-    event.description,
-    event.notes ? `Check: ${event.notes}` : '',
-    event.sourceText ? `Read from: "${event.sourceText}"` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  if (description) lines.push(`DESCRIPTION:${escapeText(description)}`);
+  // Only what the editor shows. The note and the source quote used to be
+  // folded in here, which meant an event could export a description that the
+  // Description field, sitting empty two inches away, had never contained —
+  // and when the model put a page's worth of text in the note, all of it went
+  // into the calendar. What you see is what leaves.
+  if (event.description) lines.push(`DESCRIPTION:${escapeText(event.description)}`);
   if (event.url) lines.push(`URL:${event.url}`);
 
   lines.push('END:VEVENT');

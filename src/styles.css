@@ -352,12 +352,18 @@ input[type='checkbox'] {
 .editor { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
 
 .note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   background: var(--surface-2);
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 13px;
   margin: 12px 0 0;
 }
+
+.note > span { flex: 1; min-width: 0; }
+.note-done { flex: 0 0 auto; margin: -4px -4px 0 0; }
 
 /* Two columns where two fit. A date field has a minimum width of its own, and
    below about 300px of card two of them stop fitting side by side. */

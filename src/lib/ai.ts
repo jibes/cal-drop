@@ -15,7 +15,9 @@ Rules:
 - A source may list several events (a festival programme, a series). Return each as its own object.
 - For a recurring event ("every Tuesday", "jeden ersten Freitag im Monat") set rrule to an RFC 5545 recurrence rule body and set start_date to the first occurrence.
 - Set timezone to the IANA zone of the venue when the place is clear enough to know it (Berlin venue -> Europe/Berlin). Leave it empty if you are guessing.
-- source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it.
+- source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it, and keep it to the sentence the date was in.
+- description is for the event's own particulars — a doors time, a price, who is playing — in at most two sentences. Never copy the page into it: menus, cookie notices, imprints, box-office hours and lists of other events are not part of this event.
+- notes is one short sentence, and only when something about the reading itself is uncertain — a year inferred from a weekday, two dates that disagree. Leave it empty when nothing is in doubt. It is never a place for text from the source.
 - Never invent a date. If no date can be read, return an empty list.`;
 
 /**
@@ -36,6 +38,7 @@ const JSON_SHAPE = `Answer with JSON and nothing else — no prose before or aft
 The JSON is one object: {"events": [ ... ]}, one entry per event, an empty array if there is none. Each entry has:
 - title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1) — always present
 - start_time, end_date, end_time, location, timezone, rrule, description, url, notes — strings, "" when unknown
+- description: the event's own particulars, at most two sentences. notes: one short sentence, only if the reading itself was uncertain.
 
 Stop as soon as the closing brace is written.`;
 
@@ -56,11 +59,17 @@ const EVENT_SCHEMA = {
           location: { type: 'string' },
           timezone: { type: 'string', description: 'IANA zone, or empty' },
           rrule: { type: 'string', description: 'RFC 5545 RRULE body, or empty' },
-          description: { type: 'string' },
+          description: {
+            type: 'string',
+            description: "the event's own particulars, at most two sentences — never the page's text",
+          },
           url: { type: 'string' },
           source_text: { type: 'string', description: 'verbatim quote the date was read from' },
           confidence: { type: 'number' },
-          notes: { type: 'string' },
+          notes: {
+            type: 'string',
+            description: 'one short sentence about anything uncertain in the reading, or empty',
+          },
         },
         required: ['title', 'start_date', 'all_day', 'source_text', 'confidence'],
         additionalProperties: false,
@@ -299,25 +308,38 @@ function normalizeRrule(v: string | undefined): string {
   return /^[A-Z0-9=;,+-]+$/.test(body) ? body : '';
 }
 
+/**
+ * A field is as long as the model felt like making it, and one came back with
+ * an entire web page in it — flagged as a caveat, drawn as a wall of text, and
+ * carried into the calendar. Asking in the prompt is worth doing and is not a
+ * limit; these are.
+ */
+const LIMITS = { title: 200, location: 300, description: 1500, sourceText: 300, notes: 200 } as const;
+
+const clip = (value: string | undefined, max: number): string => {
+  const text = (value || '').trim();
+  return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
+};
+
 function toDraft(raw: RawEvent, i: number): EventDraft {
   const startTime = normalizeTime(raw.start_time);
   const timezone = (raw.timezone || '').trim();
   return {
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
-    title: (raw.title || 'Untitled event').trim(),
+    title: clip(raw.title, LIMITS.title) || 'Untitled event',
     startDate: normalizeDate(raw.start_date),
     startTime,
     endDate: normalizeDate(raw.end_date),
     endTime: normalizeTime(raw.end_time),
     allDay: raw.all_day === true || !startTime,
-    location: (raw.location || '').trim(),
+    location: clip(raw.location, LIMITS.location),
     timezone: isValidZone(timezone) ? timezone : '',
     rrule: normalizeRrule(raw.rrule),
-    description: (raw.description || '').trim(),
+    description: clip(raw.description, LIMITS.description),
     url: (raw.url || '').trim(),
-    sourceText: (raw.source_text || '').trim(),
+    sourceText: clip(raw.source_text, LIMITS.sourceText),
     confidence: typeof raw.confidence === 'number' ? Math.max(0, Math.min(1, raw.confidence)) : 0.5,
-    notes: (raw.notes || '').trim(),
+    notes: clip(raw.notes, LIMITS.notes),
   };
 }
 

@@ -142,7 +142,16 @@ export function EventRow({ event, selectable, selected, onToggle, onChange, onRe
             read from “{event.sourceText}”
           </p>
         )}
-        {event.notes && <p className="note">⚠ {event.notes}</p>}
+        {event.notes && (
+          <p className="note">
+            <span>⚠ {event.notes}</span>
+            {/* Once it has been read it has done its work, and the card can
+                stop being the one with the orange border. */}
+            <button className="ghost small note-done" onClick={() => set('notes', '')} aria-label="Dismiss this note">
+              ✕
+            </button>
+          </p>
+        )}
       </div>
 
       {/* Three ways to the same place, none of them this app's preference. */}
