@@ -195,6 +195,22 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
     void video.play().catch(() => undefined);
   }, [live]);
 
+  /**
+   * A viewfinder showing nothing looks exactly like a viewfinder pointed at
+   * something black, and the shutter works either way. If no frame has arrived
+   * a few seconds after opening, say so and offer the way back in.
+   */
+  useEffect(() => {
+    if (!live) return;
+    const check = setTimeout(() => {
+      const video = videoRef.current;
+      const track = streamRef.current?.getVideoTracks()[0];
+      const dead = !video?.videoWidth || track?.readyState === 'ended' || !streamRef.current?.active;
+      if (dead) setError('The camera opened but is not sending a picture. Tap ✕ and turn it on again.');
+    }, 3000);
+    return () => clearTimeout(check);
+  }, [live]);
+
   // Start unasked only where the answer is already yes.
   useEffect(() => {
     if (dismissed || standDown || !cameraSupported()) return;
@@ -222,22 +238,37 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
     if (standDown) stop();
   }, [standDown, stop]);
 
-  // A camera left running behind a switched-away tab costs battery for nothing.
+  /**
+   * A camera left running behind a switched-away tab costs battery for
+   * nothing — but closing it belongs to leaving the page, and to nothing else.
+   *
+   * This used to list dismissed and standDown as dependencies, which meant
+   * React tore the effect down and rebuilt it whenever either changed, and
+   * tearing it down called stop(). Asking for the camera again changes
+   * standDown: the click opened a stream, the cleanup closed it a moment
+   * later, and what was left was a live viewfinder with a dead picture in it.
+   * The listener is registered once and reads the current values through refs,
+   * so the only thing that stops the camera on the way out is the way out.
+   */
+  const context = useRef({ dismissed, standDown, start, stop });
+  context.current = { dismissed, standDown, start, stop };
+
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden) stop();
-      else if (!dismissed && !standDown) {
+      const { dismissed: off, standDown: down, start: open, stop: close } = context.current;
+      if (document.hidden) close();
+      else if (!off && !down) {
         void shouldAutoStart().then((ok) => {
-          if (ok) void start();
+          if (ok) void open();
         });
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      stop();
+      context.current.stop();
     };
-  }, [dismissed, standDown, start, stop]);
+  }, []);
 
   const shoot = useCallback(async (): Promise<Prepared[]> => {
     const stream = streamRef.current;

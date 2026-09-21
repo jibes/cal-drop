@@ -501,7 +501,6 @@ a.button { text-decoration: none; display: inline-flex; }
   min-height: var(--control-h-small);
   padding: 0 12px;
   font-size: var(--control-font-small);
-  backdrop-filter: blur(6px);
   position: relative;
 }
 
@@ -936,17 +935,25 @@ button:active:not(:disabled),
 .app.scanning .top > * { pointer-events: auto; }
 .app.scanning h1 { font-size: 18px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 
-/* Everything that can be pressed over the frame shares one look: dark, blurred
-   and legible against whatever the camera happens to be pointing at. */
+/* Everything that can be pressed over the frame shares one look: dark and
+   legible against whatever the camera happens to be pointing at.
+ *
+ * No backdrop-filter on any of these, though a blurred pane is what one wants
+ * here. It is the one thing on this screen that asks the browser to composite
+ * what is behind a control — and what is behind these is a full-screen video.
+ * Several Android browsers answer that by dropping the video's own
+ * compositing and painting black, which is a viewfinder that shows nothing
+ * while everything else works. A slightly heavier tint reads the same and asks
+ * nothing of the video.
+ */
 .app.scanning .top .ghost.small,
 .app.scanning .vf-secondary,
 .app.scanning .vf-chip,
 .app.scanning .clipboard,
 .app.scanning .drop-actions > * {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.68);
   border-color: rgba(255, 255, 255, 0.4);
   color: #fff;
-  backdrop-filter: blur(6px);
 }
 
 .app.scanning .shutter-row {
