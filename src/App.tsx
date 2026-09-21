@@ -22,6 +22,12 @@ export default function App() {
   /** Something worth knowing that did not stop the run — a soft photo, say. */
   const [hint, setHint] = useState('');
   const [preview, setPreview] = useState('');
+  /**
+   * The viewfinder is open and nothing has been read yet, so the screen is a
+   * camera: the frame takes all of it and the rest floats on top. The moment
+   * there is something to read, or something to wait for, it is a page again.
+   */
+  const [scanning, setScanning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -150,8 +156,12 @@ export default function App() {
   const toggleAll = () =>
     setExcluded(chosen.length === events.length ? new Set(events.map((e) => e.id)) : new Set());
 
+  // A live viewfinder takes the screen whether or not something has been read
+  // already: asking for the camera again is asking to point it at something.
+  const viewfinder = scanning && !busy && !error;
+
   return (
-    <div className="app">
+    <div className={`app${viewfinder ? ' scanning' : ''}`}>
       <header className="top">
         <h1>
           <span className="logo">📅</span> CalDrop
@@ -170,6 +180,7 @@ export default function App() {
         onCancel={() => abortRef.current?.abort()}
         preview={preview}
         results={events.length}
+        onLive={setScanning}
       />
 
       {error && (

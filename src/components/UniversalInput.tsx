@@ -14,6 +14,7 @@ interface Props {
   preview: string;
   /** How many results are on screen. */
   results: number;
+  onLive?: (live: boolean) => void;
 }
 
 /** The steps a source goes through, so there is something to watch before the
@@ -31,7 +32,7 @@ function stepAt(stage: string, glimpse: string): number {
  * One target for everything. Deciding between "image", "PDF", "link" and "text"
  * is the app's job, not a choice to put in front of someone holding a phone.
  */
-export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results }: Props) {
+export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results, onLive }: Props) {
   const busy = Boolean(stage);
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -120,7 +121,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
       }}
     >
       {/* The reason the app exists comes first, already looking at the world. */}
-      <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} results={results} />
+      <CameraPanel onShots={onShots} onSystemCamera={useSystemCamera} busy={busy} results={results} onLive={onLive} />
 
       {/* Once there is something to read below, this whole panel is in the way
           of it: the ways in shrink to one quiet row and give the screen back. */}

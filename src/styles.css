@@ -399,6 +399,8 @@ a.button { text-decoration: none; display: inline-flex; }
 .sheet-backdrop {
   position: fixed;
   inset: 0;
+  /* Above the viewfinder and everything floating on it. */
+  z-index: 20;
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: flex-end;
@@ -865,3 +867,140 @@ button:active:not(:disabled),
 @media (prefers-reduced-motion: reduce) {
   button:active:not(:disabled), .button:active { transform: none; }
 }
+
+/* ---- the screen as a camera ---- */
+
+/*
+ * With the viewfinder open and nothing read yet, the frame is the screen and
+ * everything else floats over it. The video is contained rather than covering:
+ * a phone screen is much taller than any camera's frame, and filling it would
+ * mean cropping away the sides of the poster — the whole point is that what is
+ * on screen is what is sent, so the frame is shown whole and as large as it
+ * goes, and the controls sit in the space left over.
+ */
+.app.scanning {
+  padding: 0;
+  max-width: none;
+  height: 100svh;
+}
+
+.app.scanning .dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+}
+
+.app.scanning .camera { margin: 0; width: 100%; height: 100%; }
+
+.app.scanning .stage {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+/* The whole frame, letterboxed — never a crop of it. */
+.app.scanning .stage video { object-fit: contain; }
+
+/* The title bar keeps its place, over the frame rather than above it. */
+.app.scanning .top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  padding: calc(10px + env(safe-area-inset-top)) 14px 22px;
+  color: #fff;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.app.scanning .top > * { pointer-events: auto; }
+.app.scanning h1 { font-size: 18px; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
+
+/* Everything that can be pressed over the frame shares one look: dark, blurred
+   and legible against whatever the camera happens to be pointing at. */
+.app.scanning .top .ghost.small,
+.app.scanning .vf-secondary,
+.app.scanning .clipboard.ask,
+.app.scanning .drop-actions > * {
+  background: rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  backdrop-filter: blur(6px);
+}
+
+.app.scanning .shutter-row {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 3;
+  gap: 12px;
+  padding: 0 16px;
+  margin: 0;
+}
+
+.app.scanning .shutter { border-color: #fff; }
+
+/* The other ways in, small, on the row above the shutter. */
+.app.scanning .or { display: none; }
+
+.app.scanning .clipboard.ask,
+.app.scanning .drop-actions {
+  position: fixed;
+  z-index: 3;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  margin: 0;
+}
+
+.app.scanning .clipboard.ask {
+  left: 16px;
+  width: auto;
+  max-width: 55vw;
+  font-size: var(--control-font-small);
+  min-height: var(--control-h-small);
+  padding: 0 12px;
+}
+
+.app.scanning .drop-actions {
+  right: 16px;
+  width: auto;
+  gap: 8px;
+}
+
+.app.scanning .drop-actions > * {
+  flex: 0 0 auto;
+  min-width: 0;
+  font-size: var(--control-font-small);
+  min-height: var(--control-h-small);
+  padding: 0 12px;
+}
+
+/* Nothing else belongs on a camera screen. */
+.app.scanning .foot,
+.app.scanning .hint-bar,
+.app.scanning .results,
+.app.scanning .bulk { display: none; }
+
+/* A clipboard card with a preview in it is a page's control, not a camera's:
+   over the frame it is the button form, one line and no thumbnail. */
+.app.scanning .clipboard .clip-thumb { display: none; }
+
+/* The chips belong to the frame, so they clear the title bar above them. */
+.app.scanning .stage-top {
+  top: calc(60px + env(safe-area-inset-top));
+  z-index: 3;
+}
+
+/* The guide draws the shape to fill with the poster. Against a letterboxed
+   frame the black edges already say where that is, and a rectangle over the
+   whole screen would be saying something untrue. */
+.app.scanning .frame-guide { display: none; }

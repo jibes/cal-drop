@@ -22,6 +22,8 @@ interface Props {
   busy: boolean;
   /** How many results are on screen; above zero, the screen is for reading them. */
   results: number;
+  /** Whether the viewfinder is open, so the page can give it the whole screen. */
+  onLive?: (live: boolean) => void;
 }
 
 const PREFERENCE = 'caldrop.camera.v1';
@@ -58,7 +60,7 @@ async function shouldAutoStart(): Promise<boolean> {
  * is only done unasked once the browser has already granted it — a first visit
  * gets a button to press instead of an ambush.
  */
-export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
+export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   /** Asked for again by hand, after standing down for a result. */
   const [asked, setAsked] = useState(false);
@@ -139,6 +141,12 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
       );
     }
   }, []);
+
+  // The page lays itself out around the answer to this.
+  useEffect(() => {
+    onLive?.(live);
+    return () => onLive?.(false);
+  }, [live, onLive]);
 
   /**
    * How tall the viewfinder may be, measured rather than guessed.
