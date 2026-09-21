@@ -884,9 +884,16 @@ button:active:not(:disabled),
   height: 100svh;
 }
 
+/* The small viewport — the one with the browser's bars showing. inset: 0 is
+   the large one, which extends behind them, so anything positioned from its
+   bottom edge (the shutter, the row above it) sits underneath the browser's
+   own bar on a phone that is showing one. */
 .app.scanning .dropzone {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100svh;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -918,7 +925,11 @@ button:active:not(:disabled),
   margin: 0;
   padding: calc(10px + env(safe-area-inset-top)) 14px 22px;
   color: #fff;
-  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  /* Enough to keep the title legible, light enough that a button sitting on
+     it looks like the same button as the ones over the picture. A control
+     with the same colours reads as disabled when the ground behind it is
+     already dark. */
+  background: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0));
   pointer-events: none;
 }
 
@@ -929,16 +940,17 @@ button:active:not(:disabled),
    and legible against whatever the camera happens to be pointing at. */
 .app.scanning .top .ghost.small,
 .app.scanning .vf-secondary,
-.app.scanning .clipboard.ask,
+.app.scanning .vf-chip,
+.app.scanning .clipboard,
 .app.scanning .drop-actions > * {
-  background: rgba(0, 0, 0, 0.55);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.6);
+  border-color: rgba(255, 255, 255, 0.4);
   color: #fff;
   backdrop-filter: blur(6px);
 }
 
 .app.scanning .shutter-row {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: calc(18px + env(safe-area-inset-bottom));
@@ -953,15 +965,15 @@ button:active:not(:disabled),
 /* The other ways in, small, on the row above the shutter. */
 .app.scanning .or { display: none; }
 
-.app.scanning .clipboard.ask,
+.app.scanning .clipboard,
 .app.scanning .drop-actions {
-  position: fixed;
+  position: absolute;
   z-index: 3;
   bottom: calc(96px + env(safe-area-inset-bottom));
   margin: 0;
 }
 
-.app.scanning .clipboard.ask {
+.app.scanning .clipboard {
   left: 16px;
   width: auto;
   max-width: 55vw;
@@ -969,6 +981,19 @@ button:active:not(:disabled),
   min-height: var(--control-h-small);
   padding: 0 12px;
 }
+
+.app.scanning .clip-text {
+  /* The page's muted grey is a grey for white paper; over the frame it is the
+     one word on this screen that looks switched off. */
+  color: #fff;
+  opacity: 0.85;
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app.scanning .clip-go { display: none; }
 
 .app.scanning .drop-actions {
   right: 16px;
