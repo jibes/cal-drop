@@ -382,7 +382,11 @@ input[type='checkbox'] {
 
 .card-actions.secondary { margin-top: 8px; }
 
-a.button { text-decoration: none; display: inline-block; }
+/* A link that is a button is a button. inline-block here was undoing the
+   inline-flex every other control uses, which is why the labels in the
+   destinations row — all three of them links — sat at the top of their boxes
+   while the buttons beside them were centred. */
+a.button { text-decoration: none; display: inline-flex; }
 
 .foot { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
 
