@@ -21,7 +21,10 @@ It serves these routes:
 - `POST /v1/fetch` — `{ url }` in, `{ text }` out. Event links are read here
   rather than in the browser, so there is no CORS proxy to configure and no
   third party sees the links. Only http(s) is followed, private and
-  link-local addresses are refused, and the response is capped.
+  link-local addresses are refused **on every hop** — a public host answering
+  `302 http://127.0.0.1/` would otherwise have this endpoint fetch it and hand
+  back the contents — non-page content types are refused, and the body is
+  capped as it arrives rather than after it has all been read.
 - `GET /v1/ics?c=…` — serves a calendar file as `text/calendar` over https,
   **inline**, not as an attachment. `Content-Disposition: attachment` is the
   instruction to download and ask where to save, which is the opposite of what
@@ -48,7 +51,7 @@ Settings → Secrets and variables → Actions → Secrets:
 | `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages → the ID in the right-hand sidebar (also in the dashboard URL) |
 | `UPSTREAM_API_KEY` | The upstream API key. The workflow uploads it as the Worker secret `OPENAI_API_KEY`; it is never written into `wrangler.toml` or the site bundle |
-| `ACCESS_CODE` | **Optional.** A shared code callers must present. Without it, anyone who finds the endpoint URL can spend your credits |
+| `ACCESS_CODE` | A shared code callers must present. **Without it the endpoint refuses to serve anything** (503), because an endpoint with no code is an open door onto your API bill that fails silently. To run one open on purpose, set the var `ALLOW_NO_CODE = "yes"` |
 
 Then Actions → *Deploy shared endpoint* → **Run workflow**. The run summary
 prints the endpoint URL to use for `VITE_PROXY_URL`.
@@ -181,3 +184,45 @@ upstream key never present in any response header; the daily limit returning 429
 with `Retry-After`; a missing access code and a wrong one both 401; a foreign
 Origin 403; and `/fetch` refusing loopback, private, link-local and non-http
 addresses.
+
+
+## What the access code is, and is not
+
+It is a doorman: one shared word that every caller presents, checked before
+anything reaches the upstream key. Every route that can spend money — chat
+completions, link reading, model listing, probing — is behind it. Verified by
+asking each of them without a code, with a wrong code, and from a browser
+origin that is not on the list.
+
+It is **not** authentication:
+
+- **It is shared.** Everyone who uses this endpoint knows the same code, and
+  anyone they tell knows it too. There is no per-person identity, and no way
+  to revoke one person without changing it for everybody.
+- **It lives on the device.** The page keeps it in `localStorage` and sends it
+  as a bearer token. Anyone with the phone, or with a script injected into the
+  page, can read it.
+- **It is only as private as the people holding it.** It is not a secret the
+  way the API key is a secret: the key never leaves this worker, the code is
+  handed out on purpose.
+
+What it does buy is that a stranger who finds the URL cannot spend the key,
+and that changing one secret cuts everyone off at once.
+
+The ceilings behind it matter for the same reason, because a leaked code is
+someone else's spending:
+
+- Only the fields the app sends are forwarded upstream. A caller cannot ask
+  for `n: 20` answers, a model of their choosing, or a hundred thousand
+  tokens: unknown fields are dropped and `max_tokens` is capped at 4000.
+- `DAILY_LIMIT` counts requests per IP per day. **Without a KV namespace bound
+  as `RATE_LIMIT` it is per-isolate and in-memory**, which means it resets
+  when Cloudflare recycles the isolate and is counted separately in each
+  location — a real limit needs the KV binding, which is two commands in
+  `wrangler.toml`.
+- Request bodies are capped at `MAX_BODY_BYTES`, fetched pages at
+  `MAX_PAGE_BYTES`.
+
+If the code does leak, changing the `ACCESS_CODE` secret and re-running the
+deploy workflow is the whole remedy; everyone then re-enters the new code in
+Settings.

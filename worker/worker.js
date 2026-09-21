@@ -19,6 +19,29 @@ const DEFAULTS = {
   MAX_PAGE_BYTES: 1024 * 1024, // a fetched event page
 };
 
+/**
+ * What a caller may ask for.
+ *
+ * The body used to be forwarded wholesale with only the model replaced, which
+ * left every cost knob in the caller's hands: n: 20 is twenty answers,
+ * max_tokens: 100000 is a hundred thousand of them, and the key paying for it
+ * is the operator's. These are the fields the app actually sends; anything
+ * else a caller invents is dropped, and the two that scale the bill are
+ * capped here rather than trusted.
+ */
+const FORWARDED = ['messages', 'stream', 'temperature', 'tools', 'tool_choice', 'response_format'];
+const MAX_TOKENS_CEILING = 4000;
+
+function askedFor(body, model) {
+  const out = { model };
+  for (const key of FORWARDED) if (body[key] !== undefined) out[key] = body[key];
+  if (body.max_tokens !== undefined) {
+    const wanted = Number(body.max_tokens);
+    if (Number.isFinite(wanted) && wanted > 0) out.max_tokens = Math.min(wanted, MAX_TOKENS_CEILING);
+  }
+  return out;
+}
+
 /** Does this request attach a picture, in any of the shapes providers use? */
 function carriesImage(body) {
   return (body.messages || []).some(
@@ -56,11 +79,19 @@ function originAllowed(origin, allowed) {
   return originList(allowed).includes(origin);
 }
 
-/** Compare without leaking the answer through how long it took. */
-function sameSecret(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+/**
+ * Compare without leaking the answer through how long it took — including how
+ * long the secret is, which a length check answers before any comparison
+ * happens. Both sides are hashed first, so every comparison is 32 bytes long
+ * whatever was presented.
+ */
+async function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const digest = async (value) =>
+    new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+  const [left, right] = await Promise.all([digest(a), digest(b)]);
   let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
   return diff === 0;
 }
 
@@ -107,7 +138,13 @@ const PRIVATE_HOST =
 /** Read an event page and hand back its text. Doing this here rather than in
  *  the page means no CORS proxy, no third party seeing the links, and one less
  *  thing to configure. */
-async function fetchPage(target, maxBytes) {
+function privateAddress(url) {
+  // new URL() normalises 2130706433 and 0x7f000001 to 127.0.0.1 before this
+  // sees them, so the written form of an address is not a way past it.
+  return PRIVATE_HOST.test(url.hostname);
+}
+
+function readableUrl(target) {
   let url;
   try {
     url = new URL(target);
@@ -117,31 +154,86 @@ async function fetchPage(target, maxBytes) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return { error: 'Only http and https links can be read.' };
   }
-  if (PRIVATE_HOST.test(url.hostname)) {
-    return { error: 'That address is not reachable from here.' };
-  }
+  if (privateAddress(url)) return { error: 'That address is not reachable from here.' };
+  return { url };
+}
 
-  let res;
-  try {
-    res = await fetch(url.toString(), {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
-        // Some sites serve a different page, or none, without a browser-ish UA.
-        'User-Agent': 'Mozilla/5.0 (compatible; CalDrop/1.0; +https://github.com/jibes/cal-drop)',
-      },
-      redirect: 'follow',
-    });
-  } catch {
-    return { error: 'Could not reach that page.' };
-  }
-  if (!res.ok) return { error: `That page answered ${res.status}.` };
+/**
+ * Read an event page and hand back its text. Doing this here rather than in
+ * the page means no CORS proxy, no third party seeing the links, and one less
+ * thing to configure.
+ *
+ * Redirects are followed by hand. Following them automatically checked the
+ * address someone typed and then went wherever that address pointed: a public
+ * host answering 302 to http://127.0.0.1/ had this endpoint fetch it and hand
+ * the contents back, which is a server-side request forgery with the endpoint
+ * as the gun. Every hop is checked the same way as the first.
+ */
+async function fetchPage(target, maxBytes, hops = 5) {
+  let next = readableUrl(target);
+  if (next.error) return next;
+  let url = next.url;
 
-  const body = (await res.text()).slice(0, maxBytes);
-  return { text: htmlToText(body) };
+  for (let hop = 0; ; hop++) {
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+          // Some sites serve a different page, or none, without a browser-ish UA.
+          'User-Agent': 'Mozilla/5.0 (compatible; CalDrop/1.0; +https://github.com/jibes/cal-drop)',
+        },
+        redirect: 'manual',
+      });
+    } catch {
+      return { error: 'Could not reach that page.' };
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('Location');
+      if (!location) return { error: 'That page redirected to nowhere.' };
+      if (hop >= hops) return { error: 'That page redirected too many times.' };
+      next = readableUrl(new URL(location, url).toString());
+      if (next.error) return next;
+      url = next.url;
+      continue;
+    }
+
+    if (!res.ok) return { error: `That page answered ${res.status}.` };
+
+    // A page, not a download: without this a link to a film is read into
+    // memory a megabyte at a time to find no text in it.
+    const type = res.headers.get('Content-Type') || '';
+    if (type && !/^\s*(text\/|application\/(xhtml\+xml|xml|json))/i.test(type)) {
+      return { error: 'That link is not a page this can read.' };
+    }
+
+    return { text: htmlToText(await readCapped(res, maxBytes)) };
+  }
+}
+
+/** The first maxBytes of a body, taken as it arrives: a server is free to
+ *  claim a small page and then send for ever. */
+async function readCapped(res, maxBytes) {
+  const reader = res.body?.getReader();
+  if (!reader) return (await res.text()).slice(0, maxBytes);
+  const decoder = new TextDecoder();
+  let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value, { stream: true });
+    if (out.length >= maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      break;
+    }
+  }
+  return out.slice(0, maxBytes);
 }
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
 
+/** Tags, scripts and entities out; the words a reader would see left in. */
 function htmlToText(body) {
   return body
     .replace(/<(script|style|noscript|svg|template)[\s\S]*?<\/\1>/gi, ' ')
@@ -262,9 +354,26 @@ export default {
      */
     if (env.ACCESS_CODE) {
       const presented = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
-      if (!sameSecret(presented, env.ACCESS_CODE)) {
+      if (!(await sameSecret(presented, env.ACCESS_CODE))) {
         return json(401, { error: 'Wrong or missing access code. Enter it in Settings.' }, headers);
       }
+    } else if (env.ALLOW_NO_CODE !== 'yes') {
+      /**
+       * No code set is not a configuration, it is an open door onto someone
+       * else's API bill — and it fails silently, because everything works
+       * beautifully until the wrong person finds the URL. So it fails closed
+       * instead, and an operator who really does want an open endpoint has to
+       * say so in as many words.
+       */
+      return json(
+        503,
+        {
+          error:
+            'This endpoint has no access code set, so it is not serving anyone. Its operator must set ' +
+            'the ACCESS_CODE secret (or ALLOW_NO_CODE="yes" to run it open on purpose).',
+        },
+        headers,
+      );
     }
 
     const isChat = requestUrl.pathname.endsWith('/chat/completions');
@@ -368,7 +477,7 @@ export default {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${env.OPENAI_API_KEY}`,
             },
-            body: JSON.stringify({ ...body, model: wanted, stream: false, max_tokens: 16 }),
+            body: JSON.stringify({ ...askedFor(body, wanted), stream: false, max_tokens: 16 }),
           },
         );
         return new Response(await tried.text(), {
@@ -401,7 +510,7 @@ export default {
           // the page sent is discarded so there is one answer to "which model".
           // A request carrying pictures may need a different one, since plenty
           // of good text models cannot read an image at all.
-          body: JSON.stringify({ ...body, model: carriesImage(body) ? config.visionModel : config.model }),
+          body: JSON.stringify(askedFor(body, carriesImage(body) ? config.visionModel : config.model)),
         },
       ));
     } catch {
