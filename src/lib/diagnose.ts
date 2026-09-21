@@ -1,4 +1,5 @@
 import { requestBody, type ContentPart } from './ai';
+import { describeReach, reachEndpoint } from './reach';
 import { endpoint } from './settings';
 import type { Settings } from './types';
 
@@ -411,6 +412,26 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   if (!endpoint) {
     emit('No endpoint is configured in this build, so there is nothing to test.');
     return lines.join('\n');
+  }
+
+  // Before anything else: is the endpoint there at all, and does it serve this
+  // site? Every probe below fails the same unreadable way if it does not, and
+  // this is one public GET that needs no access code and no preflight.
+  {
+    let host = endpoint;
+    try {
+      host = new URL(endpoint).host;
+    } catch {
+      /* the endpoint's own text will do */
+    }
+    const reach = await reachEndpoint();
+    emit(`reach    ${reach === 'open' ? 'ok — answers this site' : describeReach(reach, host)}`);
+    if (reach !== 'open') {
+      emit('');
+      emit('Nothing below can run until that is fixed.');
+      return lines.join('\n');
+    }
+    emit('');
   }
 
   const code = settings.accessCode.trim();

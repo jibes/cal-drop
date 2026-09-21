@@ -1,5 +1,6 @@
 import { endpoint } from './settings';
 import { shrinkFurther } from './image';
+import { describeReach, reachEndpoint } from './reach';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
 
@@ -210,7 +211,7 @@ const chatUrl = () =>
  * endpoints never answer. The browser logs the real reason to the console and
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
-function describeNetworkFailure(): string {
+async function describeNetworkFailure(signal?: AbortSignal): Promise<string> {
   if (!endpoint) return NO_ENDPOINT;
   let host = endpoint;
   try {
@@ -218,9 +219,11 @@ function describeNetworkFailure(): string {
   } catch {
     /* an unconfigured endpoint is its own answer */
   }
+  // Three possibilities used to be listed here for the reader to choose from.
+  // One public GET, asked twice, decides between them.
   return [
-    `Could not reach ${host} — the request never left the browser.`,
-    `Either you are offline, that endpoint is not answering, or it is not configured to serve ${location.origin}.`,
+    `The request never left the browser.`,
+    describeReach(await reachEndpoint(signal), host),
   ].join('\n');
 }
 
@@ -542,7 +545,7 @@ async function callModel(
     if (Array.isArray(content)) {
       throw new TransportError('The photo could not be sent — the upload did not complete.');
     }
-    throw new Error(describeNetworkFailure());
+    throw new Error(await describeNetworkFailure(options.signal));
   }
 
   if (!res.ok) {
