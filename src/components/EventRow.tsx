@@ -56,6 +56,21 @@ export function CalendarFile({ events }: { events: EventDraft[] }) {
 export function Destinations({ events }: { events: EventDraft[] }) {
   const single = events.length === 1 ? events[0] : null;
 
+  // Nothing ticked is not a state to act in: an .ics with no events in it is a
+  // file that does nothing, and offering it is worse than saying so.
+  if (events.length === 0) {
+    return (
+      <div className="destinations">
+        <div className="card-actions">
+          <button className="button" disabled>
+            Calendar file
+          </button>
+        </div>
+        <p className="muted why">Nothing is selected.</p>
+      </div>
+    );
+  }
+
   // With several events selected there is only one way to take them, so the
   // other two are not shown greyed out: a disabled button asks to be pressed
   // and then explains itself in a tooltip no phone will ever show.
@@ -101,13 +116,17 @@ export function EventRow({ event, selectable, selected, onToggle, onChange, onRe
       <div className="summary">
         <h2>
           {selectable && (
-            <input
-              type="checkbox"
-              className="pick"
-              checked={selected}
-              onChange={onToggle}
-              aria-label={`Include ${event.title}`}
-            />
+            /* The tick is 20px because that is the right size to look at; the
+               label around it is the size a thumb needs. */
+            <label className="pick-wrap">
+              <input
+                type="checkbox"
+                className="pick"
+                checked={selected}
+                onChange={onToggle}
+                aria-label={`Include ${event.title}`}
+              />
+            </label>
           )}
           {event.title}
         </h2>
