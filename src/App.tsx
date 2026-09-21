@@ -180,6 +180,7 @@ export default function App() {
         onCancel={() => abortRef.current?.abort()}
         preview={preview}
         results={events.length}
+        fullScreen={viewfinder}
         onLive={setScanning}
       />
 

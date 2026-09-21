@@ -14,6 +14,8 @@ interface Props {
   preview: string;
   /** How many results are on screen. */
   results: number;
+  /** The viewfinder has the whole screen, so the ways in float over it. */
+  fullScreen: boolean;
   onLive?: (live: boolean) => void;
 }
 
@@ -32,7 +34,14 @@ function stepAt(stage: string, glimpse: string): number {
  * One target for everything. Deciding between "image", "PDF", "link" and "text"
  * is the app's job, not a choice to put in front of someone holding a phone.
  */
-export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results, onLive }: Props) {
+export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results, fullScreen, onLive }: Props) {
+  /**
+   * The row of ways in shrinks to make room for a result — but not while the
+   * camera has the screen. There they float over the frame with room to
+   * spare, and half of them went missing when the row collapsed itself
+   * around a result that was not even on screen.
+   */
+  const compact = results > 0 && !fullScreen;
   const busy = Boolean(stage);
   const [value, setValue] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -108,7 +117,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
   return (
     <section
       ref={boxRef}
-      className={`dropzone${dragging ? ' dragging' : ''}${results > 0 ? ' again' : ''}`}
+      className={`dropzone${dragging ? ' dragging' : ''}${compact ? ' again' : ''}`}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
@@ -125,9 +134,9 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
 
       {/* Once there is something to read below, this whole panel is in the way
           of it: the ways in shrink to one quiet row and give the screen back. */}
-      {results === 0 && <div className="or">or</div>}
+      {!compact && <div className="or">or</div>}
 
-      <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={results > 0} />
+      <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={compact} />
 
       {/* Always present, so the camera panel has something to hand back to. */}
       <input
@@ -139,9 +148,9 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
         onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
       />
 
-      <div className={`drop-actions${results > 0 ? ' tight' : ''}`}>
+      <div className={`drop-actions${compact ? ' tight' : ''}`}>
         <label className="button" title="Choose a photo or PDF already on this device">
-          {results > 0 ? '📎 File' : 'Choose file'}
+          {compact ? '📎 File' : 'Choose file'}
           <input
             type="file"
             accept="image/*,application/pdf"
