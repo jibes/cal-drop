@@ -453,10 +453,14 @@ a.button { text-decoration: none; display: inline-flex; }
   background: #000;
 }
 
+/* The box is the photo's shape: the still camera's when it says what that is,
+   the preview stream's otherwise. Cover, because where the two differ the
+   photo keeps the middle and so must the preview — when they agree, which is
+   the usual case, cover and contain are the same thing. */
 .stage video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
 }
 

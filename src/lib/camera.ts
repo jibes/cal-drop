@@ -12,6 +12,7 @@ import { frameToDataUrl, prepareImage, type Prepared } from './image';
 
 interface ImageCaptureLike {
   takePhoto(): Promise<Blob>;
+  getPhotoSettings?(): Promise<{ imageWidth?: number; imageHeight?: number }>;
 }
 
 type ImageCaptureCtor = new (track: MediaStreamTrack) => ImageCaptureLike;
@@ -37,9 +38,9 @@ export async function openCamera(deviceId = ''): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     // Ask for the rear camera, and for a 4:3 frame rather than the 16:9 a
     // large width alone tends to select: a poster is taller than it is wide,
-    // and the preview shows exactly what will be sent, so a wide frame wastes
-    // most of it. Still capture is unaffected — ImageCapture returns the
-    // sensor's own photo whatever the preview is set to.
+    // so a wide frame wastes most of it. The still comes from the camera's own
+    // photo pipeline and need not have this shape, which is what stillShape
+    // below is for.
     video: { facingMode: { ideal: 'environment' }, ...CONSTRAINTS },
     audio: false,
   });
@@ -109,13 +110,47 @@ export function closeCamera(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-export async function takeShot(stream: MediaStream, video: HTMLVideoElement): Promise<Prepared> {
+/**
+ * The shape of the photo this camera will actually take, when it will say.
+ *
+ * The preview is a video stream; the shutter uses the still pipeline, and the
+ * two are configured separately. A phone quite reasonably previews at 16:9 and
+ * photographs at 4:3 — and then the picture is not the picture that was
+ * framed. Asking first means the viewfinder can be drawn in the photo's shape
+ * instead of its own.
+ */
+export async function stillShape(stream: MediaStream | null): Promise<number> {
+  const [track] = stream?.getVideoTracks() ?? [];
+  const Ctor = imageCapture();
+  if (!track || !Ctor) return 0;
+  try {
+    const settings = await new Ctor(track).getPhotoSettings?.();
+    const w = settings?.imageWidth ?? 0;
+    const h = settings?.imageHeight ?? 0;
+    return w > 0 && h > 0 ? w / h : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Take the picture, in the shape the viewfinder was showing.
+ *
+ * `frame` is that shape. Where the still pipeline hands back a different one,
+ * the middle is kept: a photo wider than the preview contains things that were
+ * never aimed at, and one narrower has lost part of what was.
+ */
+export async function takeShot(
+  stream: MediaStream,
+  video: HTMLVideoElement,
+  frame = 0,
+): Promise<Prepared> {
   const [track] = stream.getVideoTracks();
   const Ctor = imageCapture();
 
   if (track && Ctor) {
     try {
-      return await prepareImage(await new Ctor(track).takePhoto());
+      return await prepareImage(await new Ctor(track).takePhoto(), frame);
     } catch {
       // Some devices advertise it and then refuse; the frame is still there.
     }

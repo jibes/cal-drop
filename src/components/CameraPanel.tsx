@@ -10,6 +10,7 @@ import {
   rememberedLens,
   rememberLens,
   setTorch,
+  stillShape,
   takeShot,
 } from '../lib/camera';
 import { SHARP_ENOUGH, type Prepared } from '../lib/image';
@@ -65,8 +66,12 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
   const [shots, setShots] = useState<Prepared[]>([]);
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
-  /** The camera's own shape, so the preview shows the frame that gets sent. */
+  /** The shape of the picture that will be sent — the still camera's, when it
+   *  says, and the preview stream's otherwise. */
   const [ratio, setRatio] = useState(4 / 3);
+  /** Whether that shape came from the still camera or was taken from the
+   *  preview: only the first is a promise about the photo. */
+  const [shapeKnown, setShapeKnown] = useState(false);
   /** Which rear camera, when the phone has several and names none of them. */
   const [lens, setLens] = useState('');
   const [lenses, setLenses] = useState<MediaDeviceInfo[]>([]);
@@ -113,6 +118,12 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
       }
       setLens(stream.getVideoTracks()[0]?.getSettings().deviceId ?? '');
       streamRef.current = stream;
+
+      // What shape will the photo be? The preview stream's shape is not an
+      // answer to that, so ask the still pipeline before drawing the frame.
+      const still = await stillShape(stream);
+      setShapeKnown(still > 0);
+      if (still > 0) setRatio(still);
       setTorchable(hasTorch(stream));
       setLive(true);
       // Having been granted once, it will be granted again: next visit can
@@ -189,14 +200,16 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
     const video = videoRef.current;
     if (!stream || !video) return shots;
     try {
-      const next = [...shots, await takeShot(stream, video)];
+      // The shape on screen is handed to the shutter, which crops to it if the
+      // camera hands back something else. What was framed is what is sent.
+      const next = [...shots, await takeShot(stream, video, ratio)];
       setShots(next);
       return next;
     } catch (err) {
       setError(`That shot failed: ${(err as Error).message}`);
       return shots;
     }
-  }, [shots]);
+  }, [ratio, shots]);
 
   const finish = useCallback(
     (taken: Prepared[]) => {
@@ -263,7 +276,8 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
           autoPlay
           onLoadedMetadata={(e) => {
             const video = e.currentTarget;
-            if (video.videoWidth && video.videoHeight) {
+            // Only where the camera would not say what its photos look like.
+            if (!shapeKnown && video.videoWidth && video.videoHeight) {
               setRatio(video.videoWidth / video.videoHeight);
             }
           }}

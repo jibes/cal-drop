@@ -16,23 +16,53 @@ export interface Prepared {
   height: number;
 }
 
-function downscale(source: CanvasImageSource, width: number, height: number): Prepared {
-  const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
+/**
+ * Draw the source down to size, optionally keeping only the middle of it.
+ *
+ * `frame` is the shape the picture is supposed to be — the shape the viewfinder
+ * was showing. A still camera does not have to hand back the shape its preview
+ * stream had: on a phone with a 4:3 sensor the preview may be 16:9, or the
+ * other way about, and then the photo contains something other than what was
+ * framed. Where the two disagree the middle is kept, so the picture that is
+ * sent is the picture that was aimed.
+ */
+function downscale(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  frame = 0,
+): Prepared {
+  let sx = 0;
+  let sy = 0;
+  let sw = width;
+  let sh = height;
+  // A hair of difference is rounding, not a different frame.
+  if (frame > 0 && Math.abs(width / height - frame) / frame > 0.02) {
+    if (width / height > frame) {
+      sw = Math.round(height * frame);
+      sx = Math.round((width - sw) / 2);
+    } else {
+      sh = Math.round(width / frame);
+      sy = Math.round((height - sh) / 2);
+    }
+  }
+
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(sw, sh));
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
+  canvas.width = Math.round(sw * scale);
+  canvas.height = Math.round(sh * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not read the image (no canvas context).');
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-  return { url: canvas.toDataURL('image/jpeg', JPEG_QUALITY), width, height };
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return { url: canvas.toDataURL('image/jpeg', JPEG_QUALITY), width: sw, height: sh };
 }
 
 /** Downscale a picture before it goes to the API — posters are readable well
  *  below phone-camera resolution, and tokens are charged by pixels. */
-export async function prepareImage(blob: Blob): Promise<Prepared> {
+export async function prepareImage(blob: Blob, frame = 0): Promise<Prepared> {
   const bitmap = await createImageBitmap(blob);
   try {
-    return downscale(bitmap, bitmap.width, bitmap.height);
+    return downscale(bitmap, bitmap.width, bitmap.height, frame);
   } finally {
     bitmap.close();
   }
