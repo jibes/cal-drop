@@ -12,7 +12,6 @@ import { frameToDataUrl, prepareImage, type Prepared } from './image';
 
 interface ImageCaptureLike {
   takePhoto(): Promise<Blob>;
-  getPhotoSettings?(): Promise<{ imageWidth?: number; imageHeight?: number }>;
 }
 
 type ImageCaptureCtor = new (track: MediaStreamTrack) => ImageCaptureLike;
@@ -38,9 +37,8 @@ export async function openCamera(deviceId = ''): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     // Ask for the rear camera, and for a 4:3 frame rather than the 16:9 a
     // large width alone tends to select: a poster is taller than it is wide,
-    // so a wide frame wastes most of it. The still comes from the camera's own
-    // photo pipeline and need not have this shape, which is what stillShape
-    // below is for.
+    // so a wide frame wastes most of it. The still pipeline need not return
+    // this shape, which is why the shot is cropped to the frame on screen.
     video: { facingMode: { ideal: 'environment' }, ...CONSTRAINTS },
     audio: false,
   });
@@ -108,29 +106,6 @@ export function rememberLens(deviceId: string): void {
 
 export function closeCamera(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
-}
-
-/**
- * The shape of the photo this camera will actually take, when it will say.
- *
- * The preview is a video stream; the shutter uses the still pipeline, and the
- * two are configured separately. A phone quite reasonably previews at 16:9 and
- * photographs at 4:3 — and then the picture is not the picture that was
- * framed. Asking first means the viewfinder can be drawn in the photo's shape
- * instead of its own.
- */
-export async function stillShape(stream: MediaStream | null): Promise<number> {
-  const [track] = stream?.getVideoTracks() ?? [];
-  const Ctor = imageCapture();
-  if (!track || !Ctor) return 0;
-  try {
-    const settings = await new Ctor(track).getPhotoSettings?.();
-    const w = settings?.imageWidth ?? 0;
-    const h = settings?.imageHeight ?? 0;
-    return w > 0 && h > 0 ? w / h : 0;
-  } catch {
-    return 0;
-  }
 }
 
 /**

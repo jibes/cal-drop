@@ -441,8 +441,16 @@ a.button { text-decoration: none; display: inline-flex; }
    and the subtraction is the rest of the first screen: nothing falls off when
    the bars appear. */
 .stage {
-  --stage-h: min(52svh, max(140px, calc(100svh - 400px)));
-  --stage-w: min(calc(100vw - 60px), 612px, calc(var(--stage-h) * var(--ar, 1.3333)));
+  /* --room is measured and set by the panel; this is what applies until it
+     has been, and on a screen too short to fit a tall frame. */
+  --stage-h: var(--room, min(52svh, max(140px, calc(100svh - 400px))));
+  /* A viewfinder you cannot frame a poster in is worse than a short scroll,
+     so it has a floor: a portrait camera on a small screen makes the page
+     scroll rather than shrinking to a stamp. */
+  --stage-w: max(
+    min(calc(100vw - 60px), 180px),
+    min(calc(100vw - 60px), 612px, calc(var(--stage-h) * var(--ar, 1.3333)))
+  );
 
   position: relative;
   width: var(--stage-w);

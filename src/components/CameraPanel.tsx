@@ -10,7 +10,6 @@ import {
   rememberedLens,
   rememberLens,
   setTorch,
-  stillShape,
   takeShot,
 } from '../lib/camera';
 import { SHARP_ENOUGH, type Prepared } from '../lib/image';
@@ -26,6 +25,10 @@ interface Props {
 }
 
 const PREFERENCE = 'caldrop.camera.v1';
+
+/** A little air under the panel, so the viewfinder does not sit on the edge
+ *  of the screen when it takes all the room it is offered. */
+const BREATHING_ROOM = 16;
 
 /**
  * Should the camera open without being asked? Only where it is known that no
@@ -56,6 +59,7 @@ async function shouldAutoStart(): Promise<boolean> {
  * gets a button to press instead of an ambush.
  */
 export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
+  const stageRef = useRef<HTMLDivElement>(null);
   /** Asked for again by hand, after standing down for a result. */
   const [asked, setAsked] = useState(false);
   const standDown = results > 0 && !asked;
@@ -66,12 +70,15 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
   const [shots, setShots] = useState<Prepared[]>([]);
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
-  /** The shape of the picture that will be sent — the still camera's, when it
-   *  says, and the preview stream's otherwise. */
+  /**
+   * The shape of the frame on screen, taken from the video element — which is
+   * the one measurement that says what is actually being shown. The still
+   * camera can be asked what shape its photos are, and it answers in the
+   * sensor's own orientation: a phone held upright reports a landscape frame
+   * and then delivers a portrait photo. So it is not asked; the picture is
+   * cropped to this instead.
+   */
   const [ratio, setRatio] = useState(4 / 3);
-  /** Whether that shape came from the still camera or was taken from the
-   *  preview: only the first is a promise about the photo. */
-  const [shapeKnown, setShapeKnown] = useState(false);
   /** Which rear camera, when the phone has several and names none of them. */
   const [lens, setLens] = useState('');
   const [lenses, setLenses] = useState<MediaDeviceInfo[]>([]);
@@ -118,12 +125,6 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
       }
       setLens(stream.getVideoTracks()[0]?.getSettings().deviceId ?? '');
       streamRef.current = stream;
-
-      // What shape will the photo be? The preview stream's shape is not an
-      // answer to that, so ask the still pipeline before drawing the frame.
-      const still = await stillShape(stream);
-      setShapeKnown(still > 0);
-      if (still > 0) setRatio(still);
       setTorchable(hasTorch(stream));
       setLive(true);
       // Having been granted once, it will be granted again: next visit can
@@ -138,6 +139,41 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
       );
     }
   }, []);
+
+  /**
+   * How tall the viewfinder may be, measured rather than guessed.
+   *
+   * It used to be the viewport minus a constant for everything else on the
+   * screen, and that constant was wrong every time the layout changed — and
+   * wrong at two widths at once, since the buttons wrap at narrow ones. What
+   * is left over can simply be measured: the page's height minus the stage's
+   * own is everything else, and that figure does not move when the stage
+   * does, so one pass settles it.
+   */
+  useEffect(() => {
+    if (!live) return;
+    const fit = () => {
+      const stage = stageRef.current;
+      const panel = stage?.closest('.dropzone') as HTMLElement | null;
+      if (!stage || !panel) return;
+      // What the viewfinder competes with is the rest of the panel it is in,
+      // and the header above it — not the results below, which are somewhere
+      // to scroll to and would otherwise shrink the camera for having worked.
+      const above = panel.getBoundingClientRect().top + window.scrollY;
+      const rest = panel.offsetHeight - stage.getBoundingClientRect().height;
+      const room = Math.max(140, window.innerHeight - above - rest - BREATHING_ROOM);
+      const current = Number(stage.style.getPropertyValue('--room').replace('px', '')) || 0;
+      if (Math.abs(room - current) > 2) stage.style.setProperty('--room', `${Math.round(room)}px`);
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const observer = new ResizeObserver(fit);
+    observer.observe(document.body);
+    return () => {
+      window.removeEventListener('resize', fit);
+      observer.disconnect();
+    };
+  }, [live, ratio, results]);
 
   /**
    * The video element only exists once the camera is live, so the stream has
@@ -268,7 +304,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
     <div className="camera">
       {/* Both of the stage's dimensions are derived from this, so the box
           always matches the camera instead of letterboxing when one clamps. */}
-      <div className="stage" style={{ '--ar': ratio } as React.CSSProperties}>
+      <div className="stage" ref={stageRef} style={{ '--ar': ratio } as React.CSSProperties}>
         <video
           ref={videoRef}
           playsInline
@@ -276,8 +312,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results }: Props) {
           autoPlay
           onLoadedMetadata={(e) => {
             const video = e.currentTarget;
-            // Only where the camera would not say what its photos look like.
-            if (!shapeKnown && video.videoWidth && video.videoHeight) {
+            if (video.videoWidth && video.videoHeight) {
               setRatio(video.videoWidth / video.videoHeight);
             }
           }}
