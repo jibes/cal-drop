@@ -641,8 +641,12 @@ a.button { text-decoration: none; display: inline-flex; }
    the tallest thing on the first screen, and a full-size preview of the shot
    in its place pushed the status and the results off the bottom. What is being
    sent is worth seeing, but as a thumbnail — it is already taken. */
+/* A grid column is as wide as its widest item unless it is told it may be
+   narrower, so the line of text the model has found so far — which grows a
+   word at a time — was pushing the card wider than the window. */
 .dropzone.working {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   justify-items: center;
   text-align: left;
@@ -653,6 +657,7 @@ a.button { text-decoration: none; display: inline-flex; }
   align-items: center;
   gap: 14px;
   width: 100%;
+  min-width: 0;
 }
 
 .work-thumb {
@@ -671,7 +676,7 @@ a.button { text-decoration: none; display: inline-flex; }
   font-size: 26px;
 }
 
-.work-what { min-width: 0; }
+.work-what { min-width: 0; flex: 1; }
 
 .work-stage {
   margin: 0;
@@ -682,6 +687,7 @@ a.button { text-decoration: none; display: inline-flex; }
 
 .work-glimpse {
   margin: 4px 0 0;
+  max-width: 100%;
   font-size: 14px;
   color: var(--muted);
   overflow: hidden;

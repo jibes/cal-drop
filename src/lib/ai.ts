@@ -372,6 +372,11 @@ function fromCompletion(raw: string): string {
   }
 }
 
+/** Nothing at all for this long means the answer is not coming. Long enough
+ *  that a slow model thinking before its first token is not cut off, short
+ *  enough that a spinner does not become the whole experience. */
+const SILENCE_MS = 60000;
+
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onProgress?: ExtractOptions['onProgress'],
@@ -389,13 +394,23 @@ async function readStream(
   for (;;) {
     let step: ReadableStreamReadResult<Uint8Array>;
     try {
-      step = await reader.read();
+      // A read that never resolves is the one failure with no error to catch:
+      // the connection is open, the server is silent, and the app waits for
+      // ever. Waiting is given a limit so that it becomes a failure like any
+      // other — and one the whole-answer retry can then try to get past.
+      step = await Promise.race([
+        reader.read(),
+        new Promise<ReadableStreamReadResult<Uint8Array>>((_, reject) =>
+          setTimeout(() => reject(new Error('silence')), SILENCE_MS),
+        ),
+      ]);
     } catch (err) {
       // The connection died mid-answer. Chrome words this "network error",
       // which reads like the request never left — it did, and what arrived
       // before the break may even be a whole answer.
       if ((err as Error).name === 'AbortError') throw err;
       broken = true;
+      void reader.cancel().catch(() => undefined);
       break;
     }
     if (step.done) break;
@@ -450,6 +465,13 @@ async function readStream(
  * would drift, and did: without the structured-output constraint the model
  * answered at length and the measurement was of something the app never sends.
  */
+/** How long an answer may run when a cap is safe to send. Measured runs end
+ *  at about 1300 tokens, so this is room to finish rather than a budget. */
+const MAX_OUTPUT_TOKENS = 2000;
+
+const carriesImage = (content: string | ContentPart[]) =>
+  Array.isArray(content) && content.some((part) => part.type === 'image_url');
+
 export function requestBody(
   content: string | ContentPart[],
   attempt = rememberedRung('text'),
@@ -459,14 +481,13 @@ export function requestBody(
   return {
     // No model: the endpoint decides which one answers.
     //
-    // No max_tokens either. It was added to cap a runaway answer, and it is
-    // the only parameter this request gained between photos working and
-    // photos coming back empty — from a provider whose own words were "likely
-    // an unsupported request parameter that the provider silently dropped".
-    // The cap has since been doing nothing anyway: the prompt tells the model
-    // to stop at the closing brace, and measured runs finish at about 1300
-    // tokens. A cap that never binds is not worth a silent empty answer.
+    // A cap, except on a picture. It was the only parameter the request gained
+    // between photos working and photos coming back empty, from a provider
+    // saying "likely an unsupported request parameter that the provider
+    // silently dropped" — but text has always been answered with it, and
+    // without any cap an answer that does not stop has nothing to stop it.
     stream,
+    ...(carriesImage(content) ? {} : { max_tokens: MAX_OUTPUT_TOKENS }),
     messages: messagesFor(rung, content),
     ...(rung.temperature ? { temperature: 0 } : {}),
     ...(rung.structured === 'tools'
