@@ -28,18 +28,41 @@ export default function App() {
    * there is something to read, or something to wait for, it is a page again.
    */
   const [scanning, setScanning] = useState(false);
+  /**
+   * The photos behind the last result, and what they produced. One event can
+   * need more than one picture — the back of a flyer, a poster too tall for a
+   * frame — and that is only known once the first has been read. So a page is
+   * added to a result, not decided on before the first photo: the next photo
+   * is read together with these, and its answer replaces theirs.
+   */
+  const [pages, setPages] = useState<{ images: string[]; ids: string[] } | null>(null);
+  const [adding, setAdding] = useState(false);
+  /** The last photo read found nothing — which is when a second page helps most. */
+  const [offerPage, setOfferPage] = useState(false);
+  const [wantCamera, setWantCamera] = useState(false);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const addingRef = useRef(adding);
+  addingRef.current = adding;
   const abortRef = useRef<AbortController | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const run = useCallback(async (build: () => Promise<ExtractionSource>, stage: string) => {
+  /** Resolves with what was found, or null when nothing could be read. Events
+   *  listed in replace give way to what is found, if anything is. */
+  const run = useCallback(async (
+    build: () => Promise<ExtractionSource>,
+    stage: string,
+    replace: string[] = [],
+  ): Promise<EventDraft[] | null> => {
     const current = settingsRef.current;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setError('');
+    setOfferPage(false);
     setGlimpse('');
     setBusy(stage);
     try {
@@ -52,18 +75,65 @@ export default function App() {
       if (found.length === 0) {
         setError('No dated event was found in that. Try a sharper photo, or paste the text.');
       }
-      setEvents((prev) => [...found, ...prev]);
+      setEvents((prev) =>
+        found.length > 0 ? [...found, ...prev.filter((e) => !replace.includes(e.id))] : prev,
+      );
+      return found;
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
+      if ((err as Error).name === 'AbortError') return null;
       const message = (err as Error).message || 'Something went wrong.';
       // An access-code problem is the one error with an obvious next action.
       if (/access code/i.test(message)) setShowSettings(true);
       setError(message);
+      return null;
     } finally {
       setBusy('');
       setGlimpse('');
     }
   }, []);
+
+  /** Anything that is not photos starts over: there is nothing to add a page to. */
+  const forgetPages = useCallback(() => {
+    setPages(null);
+    setAdding(false);
+  }, []);
+
+  /** Photos, from the camera or from files — on their own, or as the next page. */
+  const readPhotos = useCallback(
+    async (load: () => Promise<string[]>, label: (count: number) => string, stage: string) => {
+      const base = addingRef.current ? pagesRef.current : null;
+      setAdding(false);
+      let all: string[] = [];
+      const found = await run(
+        async () => {
+          const fresh = await load();
+          all = [...(base?.images ?? []), ...fresh];
+          setPreview(fresh[0]);
+          return { kind: 'image', label: label(all.length), images: all, text: '' };
+        },
+        base ? `Reading page ${base.images.length + 1} with the rest…` : stage,
+        base?.ids ?? [],
+      );
+      if (!found || all.length === 0) return;
+      // An added page that found nothing leaves the earlier result standing, so
+      // the next page still replaces that one.
+      setPages({ images: all, ids: found.length > 0 ? found.map((e) => e.id) : (base?.ids ?? []) });
+      setOfferPage(found.length === 0);
+    },
+    [run],
+  );
+
+  const addPage = useCallback(() => {
+    setError('');
+    setOfferPage(false);
+    setAdding(true);
+    setWantCamera(true);
+  }, []);
+
+  // Asked once: the camera is open, or adding has been called off.
+  useEffect(() => {
+    if (scanning || !adding) setWantCamera(false);
+  }, [scanning, adding]);
 
   const handleFiles = useCallback(
     (files: File[]) => {
@@ -72,6 +142,7 @@ export default function App() {
 
       if (pdf) {
         setPreview('');
+        forgetPages();
         void run(async () => {
           // pdf.js is a large dependency; only pay for it when a PDF turns up.
           const { readPdf } = await import('./lib/pdf');
@@ -87,18 +158,13 @@ export default function App() {
         setError('That file type is not supported — use an image or a PDF.');
         return;
       }
-      void run(async () => {
-        const urls = await Promise.all(images.map(fileToDataUrl));
-        setPreview(urls[0]);
-        return {
-          kind: 'image',
-          label: images.map((f) => f.name).join(', '),
-          images: urls,
-          text: '',
-        };
-      }, 'Preparing the image…');
+      void readPhotos(
+        () => Promise.all(images.map(fileToDataUrl)),
+        (count) => (count === images.length ? images.map((f) => f.name).join(', ') : `${count} photos`),
+        'Preparing the image…',
+      );
     },
-    [run],
+    [run, readPhotos, forgetPages],
   );
 
   /** Photographs taken in the app: already downscaled, so they skip file handling. */
@@ -106,18 +172,13 @@ export default function App() {
     (images: string[], warning: string) => {
       if (images.length === 0) return;
       setHint(warning);
-      setPreview(images[0]);
-      void run(
-        async () => ({
-          kind: 'image',
-          label: images.length === 1 ? 'photo' : `${images.length} photos`,
-          images,
-          text: '',
-        }),
-        images.length === 1 ? 'Reading the photo…' : `Reading ${images.length} photos…`,
+      void readPhotos(
+        async () => images,
+        (count) => (count === 1 ? 'photo' : `${count} photos`),
+        'Reading the photo…',
       );
     },
-    [run],
+    [readPhotos],
   );
 
   /** One entry point for typed, pasted and shared text: a link is just text that looks like one. */
@@ -126,6 +187,7 @@ export default function App() {
       const trimmed = value.trim();
       if (!trimmed) return;
       setPreview('');
+      forgetPages();
       const link = /^https?:\/\/\S+$/i.test(trimmed) ? trimmed : firstUrlIn(trimmed);
 
       if (link && trimmed.length - link.length < 40) {
@@ -140,7 +202,7 @@ export default function App() {
         'Reading the text…',
       );
     },
-    [run],
+    [run, forgetPages],
   );
 
   // Anything handed in from the OS share sheet, "open with", the text
@@ -194,14 +256,33 @@ export default function App() {
         results={events.length}
         fullScreen={viewfinder}
         onLive={setScanning}
+        wantCamera={wantCamera}
       />
 
       {/* Floating, so neither one moves the page — or the camera — around. */}
-      {(error || (hint && !busy)) && (
+      {(error || (hint && !busy) || adding) && (
         <div className="toasts">
+          {adding && pages && (
+            <div className="toast adding-toast" role="status">
+              <p>
+                Adding page {pages.images.length + 1}: take a photo or choose a file, and it is read
+                together with the {pages.images.length === 1 ? 'first' : `other ${pages.images.length}`}.
+              </p>
+              <button className="toast-close" onClick={() => setAdding(false)} aria-label="Stop adding a page">
+                ✕
+              </button>
+            </div>
+          )}
           {error && (
             <div className="toast error" role="alert">
-              <p>{error}</p>
+              <p>
+                {error}
+                {offerPage && pages && (
+                  <button className="ghost small toast-action" onClick={addPage}>
+                    ＋ Add a page
+                  </button>
+                )}
+              </p>
               <button className="toast-close" onClick={() => setError('')} aria-label="Dismiss">
                 ✕
               </button>
@@ -215,6 +296,17 @@ export default function App() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {pages && pages.ids.length > 0 && !busy && events.some((e) => pages.ids.includes(e.id)) && (
+        <div className="pages-bar">
+          <span>
+            📷 Read from {pages.images.length === 1 ? '1 photo' : `${pages.images.length} photos`}
+          </span>
+          <button className="ghost small" onClick={addPage}>
+            ＋ Add a page
+          </button>
         </div>
       )}
 

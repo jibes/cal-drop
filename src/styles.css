@@ -512,26 +512,14 @@ a.button { text-decoration: none; display: inline-flex; }
   font-size: 13px;
 }
 
-.vf-shots {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  display: flex;
-  gap: 6px;
-  max-width: calc(100% - 16px);
-  overflow-x: auto;
-}
 
-.vf-shots img {
-  height: 44px;
-  border-radius: 6px;
-  border: 2px solid rgba(255, 255, 255, 0.8);
-}
 
+/* Three columns, the outer two equal, so the shutter is centred whatever
+   sits either side of it — or does not. */
 .shutter-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   margin-top: 12px;
 }
@@ -565,12 +553,6 @@ a.button { text-decoration: none; display: inline-flex; }
 .shutter:active span { transform: scale(0.88); }
 .shutter:disabled { opacity: 0.4; }
 
-.vf-count {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  text-align: center;
-}
 
 /* ---- what is on the clipboard ---- */
 
@@ -990,6 +972,7 @@ button:active:not(:disabled),
 
 /* Nothing else belongs on a camera screen. */
 .app.scanning .foot,
+.app.scanning .pages-bar,
 .app.scanning .results,
 .app.scanning .bulk { display: none; }
 
@@ -1129,3 +1112,27 @@ button:active:not(:disabled),
 /* A camera that would not open says why above the button that tries again. */
 .camera.off { flex-direction: column; align-items: center; }
 .camera-error { margin: 0 0 8px; color: var(--bad); font-size: 13px; text-align: center; }
+
+/* ---- more than one photo of the same thing ---- */
+
+
+/* Which photos the result came from, and the way to add one to them. */
+.pages-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 4px 4px 4px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pages-bar + .results,
+.pages-bar + .bulk { margin-top: 12px; }
+
+.toast.adding-toast { border-color: var(--accent); border-left-width: 4px; }
+
+.toast-action { display: flex; margin-top: 8px; margin-left: -12px; color: var(--accent); }

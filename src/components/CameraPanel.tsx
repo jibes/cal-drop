@@ -24,6 +24,8 @@ interface Props {
   results: number;
   /** Whether the viewfinder is open, so the page can give it the whole screen. */
   onLive?: (live: boolean) => void;
+  /** The page wants the camera open — to add a page to what was just read. */
+  wantCamera?: boolean;
 }
 
 const PREFERENCE = 'caldrop.camera.v1';
@@ -60,7 +62,7 @@ async function shouldAutoStart(): Promise<boolean> {
  * is only done unasked once the browser has already granted it — a first visit
  * gets a button to press instead of an ambush.
  */
-export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: Props) {
+export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wantCamera }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   /** Asked for again by hand, after standing down for a result. */
   const [asked, setAsked] = useState(false);
@@ -69,7 +71,6 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState(false);
   const [error, setError] = useState('');
-  const [shots, setShots] = useState<Prepared[]>([]);
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
   /**
@@ -250,6 +251,14 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
     if (standDown) stop();
   }, [standDown, stop]);
 
+  // Asked for from outside: "add a page" is pointing the camera at the next one.
+  useEffect(() => {
+    if (!wantCamera || live) return;
+    setDismissed(false);
+    setAsked(true);
+    void start();
+  }, [wantCamera, live, start]);
+
   /**
    * A camera left running behind a switched-away tab costs battery for
    * nothing — but closing it belongs to leaving the page, and to nothing else.
@@ -282,38 +291,34 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
     };
   }, []);
 
-  const shoot = useCallback(async (): Promise<Prepared[]> => {
+  /**
+   * One press, one photo, read at once. A second page of the same event is
+   * added from the result, once it is clear one was needed — not decided
+   * before the first photo, on every photo.
+   */
+  const capture = useCallback(async () => {
     const stream = streamRef.current;
     const video = videoRef.current;
-    if (!stream || !video) return shots;
+    if (!stream || !video) return;
+    let shot: Prepared;
     try {
       // The shape on screen is handed to the shutter, which crops to it if the
       // camera hands back something else. What was framed is what is sent.
-      const next = [...shots, await takeShot(stream, video, ratio)];
-      setShots(next);
-      return next;
+      shot = await takeShot(stream, video, ratio);
     } catch (err) {
       setError(`That shot failed: ${(err as Error).message}`);
-      return shots;
+      return;
     }
-  }, [ratio, shots]);
-
-  const finish = useCallback(
-    (taken: Prepared[]) => {
-      if (taken.length === 0) return;
-      // A soft capture is the one failure a user can act on, and it is
-      // invisible until the extraction comes back empty.
-      const softest = Math.min(...taken.map((shot) => Math.max(shot.width, shot.height)));
-      onShots(
-        taken.map((shot) => shot.url),
-        softest < SHARP_ENOUGH
-          ? `Those came out at ${softest}px, which may be too soft for small print. If nothing is found, try the system camera.`
-          : '',
-      );
-      setShots([]);
-    },
-    [onShots],
-  );
+    // A soft capture is the one failure a user can act on, and it is
+    // invisible until the extraction comes back empty.
+    const size = Math.max(shot.width, shot.height);
+    onShots(
+      [shot.url],
+      size < SHARP_ENOUGH
+        ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, try the system camera.`
+        : '',
+    );
+  }, [onShots, ratio]);
 
   /** No API says which lens is the ordinary one, so offer the others. */
   const nextLens = async () => {
@@ -399,24 +404,16 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
           </button>
         </div>
 
-        {shots.length > 0 && (
-          <div className="vf-shots">
-            {shots.map((shot, i) => (
-              <img key={shot.url.slice(-24) + i} src={shot.url} alt={`Shot ${i + 1}`} />
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="shutter-row">
-        <button className="vf-secondary" onClick={() => void shoot()} disabled={!live || busy}>
-          + another
-        </button>
+        {/* Keeps the shutter in the middle, where the thumb already is. */}
+        <span className="shutter-side" aria-hidden="true" />
         <button
           className="shutter"
-          onClick={() => void shoot().then(finish)}
+          onClick={() => void capture()}
           disabled={!live || busy}
-          aria-label={shots.length ? `Read ${shots.length + 1} photos` : 'Take the photo and read it'}
+          aria-label="Take the photo and read it"
         >
           <span />
         </button>
@@ -424,10 +421,6 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
           System camera
         </button>
       </div>
-
-      {shots.length > 0 && (
-        <p className="vf-count">{shots.length} banked — the shutter adds one more and reads them all</p>
-      )}
     </div>
   );
 }
