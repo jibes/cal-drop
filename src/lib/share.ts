@@ -50,7 +50,7 @@ interface ShareTarget {
   addListener(
     event: 'shared',
     handler: (payload: { text?: string; title?: string; files?: SharedFile[] }) => void,
-  ): Promise<unknown>;
+  ): unknown;
 }
 
 const shareTarget = (): ShareTarget | undefined =>
@@ -88,14 +88,19 @@ function fromNative(payload: {
  * plugin unread, because the page only collects once, on load.
  */
 export function onShared(handler: (incoming: IncomingShare) => void): void {
-  void shareTarget()
-    ?.addListener('shared', (payload) => {
+  // Through Capacitor.Plugins, addListener hands back a callback id rather
+  // than a promise, so it is wrapped before anything is chained on it.
+  try {
+    const listening = shareTarget()?.addListener('shared', (payload) => {
       const incoming = fromNative(payload);
       if (incoming) handler(incoming);
-    })
-    .catch(() => {
+    });
+    void Promise.resolve(listening).catch(() => {
       /* an older shell without the plugin simply never calls back */
     });
+  } catch {
+    /* same: no listener, nothing to hand over */
+  }
 }
 
 /**
