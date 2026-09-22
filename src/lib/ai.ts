@@ -200,6 +200,10 @@ class RungError extends Error {}
  *  problem, so the same rung is worth one more try by another route. */
 class TransportError extends Error {}
 
+/** The request could not reach the endpoint at all. Nothing about what was
+ *  sent is to blame, so it is reported as found rather than second-guessed. */
+class ReachError extends Error {}
+
 export interface ExtractOptions {
   signal?: AbortSignal;
   /** Called with the best-known title/date while the response is still arriving. */
@@ -583,12 +587,14 @@ async function callModel(
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
     // A request that never left is usually the endpoint being unreachable —
-    // unless it was carrying a photo, in which case the likeliest reason is
-    // that the upload itself died, and a smaller one may still get through.
-    if (Array.isArray(content)) {
+    // unless it was carrying a photo to an endpoint that does serve this
+    // page, in which case the upload itself died and a smaller one may still
+    // get through. Anything else (the origin refused, nothing listening, no
+    // network) no smaller photo will fix, so it is named rather than retried.
+    if (Array.isArray(content) && (await reachEndpoint(options.signal)) === 'open') {
       throw new TransportError('The photo could not be sent — the upload did not complete.');
     }
-    throw new Error(await describeNetworkFailure(options.signal));
+    throw new ReachError(await describeNetworkFailure(options.signal));
   }
 
   if (!res.ok) {
@@ -698,8 +704,12 @@ async function runPass(
         }
       }
       // Said in the words of what went wrong, not of the half-answer it left.
+      // An upload that never completed keeps its own words: no answer was
+      // ever on its way.
       if (broken) {
-        last = new TransportError('The connection dropped while the answer was arriving.');
+        if (!(last instanceof TransportError)) {
+          last = new TransportError('The connection dropped while the answer was arriving.');
+        }
         throw last;
       }
       throw new RungError(last?.message ?? 'That way of asking got nothing back.');
@@ -755,12 +765,13 @@ export async function extractEvents(
         if ((retry as Error).name === 'AbortError') throw retry;
         throw new Error(
           `${(retry as Error).message}\n\nThe photo was sent again at a smaller size and did not get ` +
-            'through either. Either the connection is too weak to carry one, or the endpoint is not ' +
-            'answering at all — pasting some text will tell you which.',
+            'through either. The endpoint is up and serves this app, so it is the connection that ' +
+            'cannot carry a photo right now — try again on a better one, or paste the text instead.',
         );
       }
     }
-    if ((err as Error).name === 'AbortError' || source.images.length === 0) throw err;
+    if ((err as Error).name === 'AbortError' || err instanceof ReachError) throw err;
+    if (source.images.length === 0) throw err;
     // Text just worked for other sources, so a failure only on the pass that
     // carries pictures points at the model rather than at this request. Which
     // model, though, depends on how it failed: a refusal means the images were
