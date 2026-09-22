@@ -5,7 +5,7 @@ import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
 import { fileToDataUrl } from './lib/image';
 import { loadSettings, saveSettings } from './lib/settings';
-import { firstUrlIn, takeIncoming } from './lib/share';
+import { firstUrlIn, onShared, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
 import { fetchPageText } from './lib/url';
 
@@ -143,14 +143,24 @@ export default function App() {
     [run],
   );
 
-  // Anything handed in from the OS share sheet, a bookmarklet or a Shortcut.
-  useEffect(() => {
-    void takeIncoming().then((incoming) => {
-      if (!incoming) return;
+  // Anything handed in from the OS share sheet, "open with", the text
+  // selection menu, a bookmarklet or a Shortcut.
+  const receive = useCallback(
+    (incoming: { files: File[]; text: string; url: string }) => {
       if (incoming.files.length > 0) handleFiles(incoming.files);
       else handleText(incoming.url || incoming.text);
+    },
+    [handleFiles, handleText],
+  );
+
+  useEffect(() => {
+    void takeIncoming().then((incoming) => {
+      if (incoming) receive(incoming);
     });
-  }, [handleFiles, handleText]);
+    // And again for anything shared while the app is already open, which is
+    // the second poster in a row — otherwise it would be collected by nobody.
+    onShared(receive);
+  }, [receive]);
 
   const chosen = events.filter((event) => !excluded.has(event.id));
   const toggleAll = () =>

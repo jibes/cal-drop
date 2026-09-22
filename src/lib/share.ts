@@ -35,11 +35,86 @@ export function registerServiceWorker(): void {
 }
 
 /**
- * Anything handed to the app from outside: the OS share sheet (parked in a
- * cache by the service worker) or ?url= / ?text= on the address bar, which is
- * what a bookmarklet or an iOS Shortcut can drive.
+ * What the native shell was handed by the rest of the phone: the share sheet,
+ * "open with", or the text-selection menu. A browser has no such plugin and
+ * this is simply nothing.
+ */
+interface SharedFile {
+  name: string;
+  type: string;
+  data: string;
+}
+
+interface ShareTarget {
+  consume(): Promise<{ text?: string; title?: string; files?: SharedFile[] }>;
+  addListener(
+    event: 'shared',
+    handler: (payload: { text?: string; title?: string; files?: SharedFile[] }) => void,
+  ): Promise<unknown>;
+}
+
+const shareTarget = (): ShareTarget | undefined =>
+  (globalThis as { Capacitor?: { Plugins?: { ShareTarget?: ShareTarget } } }).Capacitor?.Plugins
+    ?.ShareTarget;
+
+/** Bytes as a File, because that is what every way in already takes. */
+function toFile(file: SharedFile): File | null {
+  try {
+    const binary = atob(file.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], file.name || 'shared', { type: file.type });
+  } catch {
+    return null;
+  }
+}
+
+function fromNative(payload: {
+  text?: string;
+  title?: string;
+  files?: SharedFile[];
+}): IncomingShare | null {
+  const files = (payload.files ?? []).map(toFile).filter((f): f is File => f !== null);
+  const text = [payload.title, payload.text].filter(Boolean).join('\n').trim();
+  if (files.length === 0 && !text) return null;
+  // A share is overwhelmingly a link with a word in front of it; the caller
+  // decides what to do with text either way, so it travels as text.
+  return { files, text, url: '' };
+}
+
+/**
+ * Whatever the phone hands over while the app is already open — a second
+ * poster shared right after the first. Without this it would sit in the
+ * plugin unread, because the page only collects once, on load.
+ */
+export function onShared(handler: (incoming: IncomingShare) => void): void {
+  void shareTarget()
+    ?.addListener('shared', (payload) => {
+      const incoming = fromNative(payload);
+      if (incoming) handler(incoming);
+    })
+    .catch(() => {
+      /* an older shell without the plugin simply never calls back */
+    });
+}
+
+/**
+ * Anything handed to the app from outside: the native share target, the OS
+ * share sheet in a browser (parked in a cache by the service worker), or
+ * ?url= / ?text= on the address bar, which is what a bookmarklet or an iOS
+ * Shortcut can drive.
  */
 export async function takeIncoming(): Promise<IncomingShare | null> {
+  try {
+    const waiting = await shareTarget()?.consume();
+    if (waiting) {
+      const incoming = fromNative(waiting);
+      if (incoming) return incoming;
+    }
+  } catch {
+    /* the shell is there but said nothing usable; the web paths still apply */
+  }
+
   const params = new URLSearchParams(location.search);
   const shared = params.has('shared');
   const url = params.get('url') ?? '';
