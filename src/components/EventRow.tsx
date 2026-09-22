@@ -4,6 +4,7 @@ import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/ca
 import { addToCalendarApp, calendarAppAvailable } from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
 import { downloadIcs, icsLink } from '../lib/ics';
+import { Icon } from './Icon';
 import type { EventDraft } from '../lib/types';
 
 interface Props {
@@ -267,11 +268,17 @@ export function EventRow({ event, selectable, selected, onToggle, onChange, onRe
       </div>
 
       <Destinations events={[event]}>
-        <button className="ghost small" onClick={() => setOpen((v) => !v)}>
-          {open ? 'Done' : 'Edit'}
+        <button
+          className="ghost small icon-button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? 'Done editing' : 'Edit'}
+          aria-pressed={open}
+          title={open ? 'Done editing' : 'Edit'}
+        >
+          <Icon name={open ? 'done' : 'edit'} />
         </button>
-        <button className="ghost small" onClick={onRemove}>
-          Discard
+        <button className="ghost small icon-button" onClick={onRemove} aria-label="Discard" title="Discard">
+          <Icon name="discard" />
         </button>
       </Destinations>
       {caveat && <p className="muted caveat">{caveat}</p>}

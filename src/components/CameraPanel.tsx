@@ -13,12 +13,11 @@ import {
   takeShot,
 } from '../lib/camera';
 import { SHARP_ENOUGH, type Prepared } from '../lib/image';
+import { Icon } from './Icon';
 
 interface Props {
   /** Shots in the order taken, plus a warning when they look too soft to read. */
   onShots: (images: string[], warning: string) => void;
-  /** The way out: the system camera, for when this one will not do. */
-  onSystemCamera: () => void;
   busy: boolean;
   /** How many results are on screen; above zero, the screen is for reading them. */
   results: number;
@@ -62,7 +61,7 @@ async function shouldAutoStart(): Promise<boolean> {
  * is only done unasked once the browser has already granted it — a first visit
  * gets a button to press instead of an ambush.
  */
-export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wantCamera }: Props) {
+export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   /** Asked for again by hand, after standing down for a result. */
   const [asked, setAsked] = useState(false);
@@ -315,7 +314,7 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wa
     onShots(
       [shot.url],
       size < SHARP_ENOUGH
-        ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, try the system camera.`
+        ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, take it with the camera app and share it to CalDrop.`
         : '',
     );
   }, [onShots, ratio]);
@@ -354,7 +353,8 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wa
             void start();
           }}
         >
-          {standDown ? '📷 Scan' : '📷 Turn on the camera'}
+          <Icon name="camera" />
+          {standDown ? 'Scan' : 'Turn on the camera'}
         </button>
       </div>
     );
@@ -382,13 +382,24 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wa
 
         <div className="stage-top">
           {lenses.length > 1 && (
-            <button className="vf-chip" onClick={() => void nextLens()} title="Switch rear camera">
-              Lens {Math.max(0, lenses.findIndex((d) => d.deviceId === lens)) + 1}/{lenses.length}
+            <button
+              className="vf-chip"
+              onClick={() => void nextLens()}
+              aria-label={`Switch lens (${Math.max(0, lenses.findIndex((d) => d.deviceId === lens)) + 1} of ${lenses.length})`}
+              title="Switch lens"
+            >
+              <Icon name="lens" />
             </button>
           )}
           {torchable && (
-            <button className="vf-chip" onClick={toggleTorch} aria-pressed={torch}>
-              {torch ? '🔦 On' : '🔦 Off'}
+            <button
+              className="vf-chip"
+              onClick={toggleTorch}
+              aria-pressed={torch}
+              aria-label={torch ? 'Light on' : 'Light off'}
+              title={torch ? 'Turn the light off' : 'Turn the light on'}
+            >
+              <Icon name={torch ? 'flash' : 'flashOff'} filled={torch} />
             </button>
           )}
           <button
@@ -407,8 +418,6 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wa
       </div>
 
       <div className="shutter-row">
-        {/* Keeps the shutter in the middle, where the thumb already is. */}
-        <span className="shutter-side" aria-hidden="true" />
         <button
           className="shutter"
           onClick={() => void capture()}
@@ -416,9 +425,6 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive, wa
           aria-label="Take the photo and read it"
         >
           <span />
-        </button>
-        <button className="vf-secondary" onClick={onSystemCamera}>
-          System camera
         </button>
       </div>
     </div>

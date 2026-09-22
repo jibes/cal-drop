@@ -520,21 +520,14 @@ a.button { text-decoration: none; display: inline-flex; }
 
 
 
-/* Three columns, the outer two equal, so the shutter is centred whatever
-   sits either side of it — or does not. */
+/* The shutter alone, in the middle, where the thumb already is. */
 .shutter-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 10px;
   margin-top: 12px;
 }
 
-.vf-secondary {
-  flex: 1;
-  font-size: var(--control-font-small);
-  padding: 0 8px;
-}
 
 .shutter {
   width: 64px;
@@ -723,27 +716,15 @@ a.button { text-decoration: none; display: inline-flex; }
 
 /* ---- weight, where it belongs ---- */
 
-/* The shutter is the action; what flanks it is a way out of it, not a rival.
-   Three buttons of equal weight around a viewfinder read as a choice to make
-   before taking the photo, which is exactly the pause the app exists to avoid. */
-.vf-secondary {
-  background: transparent;
-  border-color: transparent;
-  color: var(--muted);
-  font-size: 13px;
-}
 
-.vf-secondary:hover:not(:disabled) { color: var(--text); border-color: var(--line); }
 
-/* Choosing a file or typing is the long way round: offered, not urged. The
-   clipboard keeps its weight — on a phone it is where the poster usually is. */
+/* The same weight as Paste beside them. Their place in the list says which
+   comes first; grey text on an empty button only said "disabled". */
 .drop-actions > * {
   font-size: var(--control-font);
-  background: transparent;
-  color: var(--muted);
+  background: var(--surface-2);
+  color: var(--text);
 }
-
-.drop-actions > *:hover { color: var(--text); }
 
 
 /* The place wraps; the date must not have to. */
@@ -907,7 +888,6 @@ button:active:not(:disabled),
  * nothing of the video.
  */
 .app.scanning .top .ghost.small,
-.app.scanning .vf-secondary,
 .app.scanning .vf-chip,
 .app.scanning .clipboard,
 .app.scanning .drop-actions > * {
@@ -1060,8 +1040,6 @@ button:active:not(:disabled),
 /* ---- adding to the calendar ---- */
 
 .card-actions .ghost.small { flex: 0 0 auto; }
-/* Edit turns into Done; the row should not jump when it does. */
-.card-actions .ghost.small:first-of-type { min-width: 64px; }
 
 /* One button that does it, and the alternatives behind the ▾ beside it. */
 .split {
@@ -1142,3 +1120,35 @@ button:active:not(:disabled),
 .toast.adding-toast { border-color: var(--accent); border-left-width: 4px; }
 
 .toast-action { display: flex; margin-top: 8px; margin-left: -12px; color: var(--accent); }
+
+/* ---- icons ---- */
+
+.icon { flex: 0 0 auto; display: block; }
+
+/* A button that is only an icon is square: the same height as its row, and
+   as wide as it is tall. Its name is in aria-label and title. */
+.icon-button,
+.vf-chip {
+  padding: 0;
+  aspect-ratio: 1;
+  justify-content: center;
+}
+
+.card-actions .icon-button { min-width: var(--control-h-small); }
+
+.vf-chip { min-height: var(--tap); width: var(--tap); }
+.vf-chip[aria-pressed='true'] { color: #ffd25e; border-color: rgba(255, 210, 94, 0.6); }
+
+.top .icon-button { width: var(--tap); min-height: var(--tap); }
+
+/* Round, like the buttons over the frame it sits above. */
+.top .icon-button { border-radius: 999px; }
+
+/* Over the frame, the chips line up with the title bar's own edge — the gear
+   above them sat 6px further in than the ✕ below it. */
+.app.scanning .stage-top { left: 14px; right: 14px; }
+
+.pages-what { display: inline-flex; align-items: center; gap: 8px; }
+.clip-icon .icon { width: 18px; height: 18px; }
+
+.bulk-tools { display: flex; gap: 8px; }

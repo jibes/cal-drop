@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { canPeekSilently, clipboardReadable, readClipboard, type ClipboardPeek } from '../lib/clipboard';
 import { SHARP_ENOUGH } from '../lib/image';
+import { Icon } from './Icon';
 
 interface Props {
   onText: (value: string) => void;
@@ -80,14 +81,17 @@ export function ClipboardCard({ onText, onShots, busy, compact = false }: Props)
         onClick={() => void (peek ? Promise.resolve(peek) : readClipboard()).then(send)}
         title={silent && !peek ? 'Nothing readable on the clipboard just now' : undefined}
       >
-        {compact ? '📋 Paste' : '📋 Paste from clipboard'}
+        <Icon name="paste" />
+        Paste
       </button>
     );
   }
 
   return (
     <button className="clipboard" disabled={busy} onClick={() => send(peek)}>
-      <span className="clip-icon">📋</span>
+      <span className="clip-icon">
+        <Icon name="paste" />
+      </span>
       {peek.kind === 'image' && peek.image ? (
         <img className="clip-thumb" src={peek.image.url} alt="" />
       ) : null}

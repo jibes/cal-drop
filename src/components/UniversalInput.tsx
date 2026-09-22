@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CameraPanel } from './CameraPanel';
 import { ClipboardCard } from './ClipboardCard';
+import { Icon } from './Icon';
 
 interface Props {
   onFiles: (files: File[]) => void;
@@ -49,10 +50,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
   const [dragging, setDragging] = useState(false);
   const [typing, setTyping] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
-  const systemCameraRef = useRef<HTMLInputElement>(null);
 
-  // The way out of the in-app camera is the one that always worked.
-  const useSystemCamera = () => systemCameraRef.current?.click();
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -134,7 +132,6 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
       {/* The reason the app exists comes first, already looking at the world. */}
       <CameraPanel
         onShots={onShots}
-        onSystemCamera={useSystemCamera}
         busy={busy}
         results={results}
         onLive={onLive}
@@ -147,19 +144,11 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
 
       <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={compact} />
 
-      {/* Always present, so the camera panel has something to hand back to. */}
-      <input
-        ref={systemCameraRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={(e) => onFiles(Array.from(e.target.files ?? []))}
-      />
 
       <div className={`drop-actions${compact ? ' tight' : ''}`}>
         <label className="button" title="Choose a photo or PDF already on this device">
-          {compact ? '📎 File' : '📎 Choose file'}
+          <Icon name="file" />
+          File
           <input
             type="file"
             accept="image/*,application/pdf"
@@ -172,7 +161,8 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
             field standing open: the first screen stays the camera and what is
             already on the clipboard. */}
         <button onClick={() => setTyping(true)} disabled={busy}>
-          ⌨ Text
+          <Icon name="text" />
+          Text
         </button>
       </div>
 

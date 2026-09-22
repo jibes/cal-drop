@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Destinations, EventRow } from './components/EventRow';
+import { Icon } from './components/Icon';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
@@ -225,6 +226,14 @@ export default function App() {
   }, [receive]);
 
   const chosen = events.filter((event) => !excluded.has(event.id));
+  /** Start over: every result goes, and with it the photos behind them. */
+  const clearAll = () => {
+    setEvents([]);
+    setExcluded(new Set());
+    forgetPages();
+    setError('');
+    setHint('');
+  };
   const toggleAll = () =>
     setExcluded(chosen.length === events.length ? new Set(events.map((e) => e.id)) : new Set());
 
@@ -240,8 +249,13 @@ export default function App() {
         <h1>
           <img className="logo" src="./icon.svg" alt="" /> CalDrop
         </h1>
-        <button className="ghost small" onClick={() => setShowSettings(true)}>
-          Settings
+        <button
+          className="ghost small icon-button"
+          onClick={() => setShowSettings(true)}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <Icon name="settings" />
         </button>
       </header>
 
@@ -301,8 +315,9 @@ export default function App() {
 
       {pages && pages.ids.length > 0 && !busy && events.some((e) => pages.ids.includes(e.id)) && (
         <div className="pages-bar">
-          <span>
-            📷 Read from {pages.images.length === 1 ? '1 photo' : `${pages.images.length} photos`}
+          <span className="pages-what">
+            <Icon name="camera" />
+            Read from {pages.images.length === 1 ? '1 photo' : `${pages.images.length} photos`}
           </span>
           <button className="ghost small" onClick={addPage}>
             ＋ Add a page
@@ -316,9 +331,15 @@ export default function App() {
             <span>
               {chosen.length} of {events.length} selected
             </span>
-            <button className="ghost small" onClick={toggleAll}>
-              {chosen.length === events.length ? 'Select none' : 'Select all'}
-            </button>
+            <span className="bulk-tools">
+              <button className="ghost small" onClick={toggleAll}>
+                {chosen.length === events.length ? 'Select none' : 'Select all'}
+              </button>
+              <button className="ghost small" onClick={clearAll}>
+                <Icon name="discard" />
+                Clear all
+              </button>
+            </span>
           </div>
           <Destinations events={chosen} />
         </section>
