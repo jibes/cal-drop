@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
+import { addToCalendarApp, calendarAppAvailable } from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
 import { downloadIcs, icsLink } from '../lib/ics';
 import type { EventDraft } from '../lib/types';
@@ -53,8 +54,56 @@ export function CalendarFile({ events }: { events: EventDraft[] }) {
  * those URLs and not a choice — so with several selected only the file can
  * carry them all.
  */
+/**
+ * Whether this device has a calendar app this one can open directly. Asked
+ * once, and only answered yes inside the native shell — in a browser there is
+ * no plugin to ask, so the button never appears and the page is unchanged.
+ */
+function useCalendarApp(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void calendarAppAvailable().then((yes) => {
+      if (!cancelled) setReady(yes);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return ready;
+}
+
+/**
+ * Hand the event to the calendar itself. Where nothing answers after all —
+ * a calendar uninstalled between the question and the tap — the file is still
+ * there, so the button falls back to it rather than failing.
+ */
+function AddToCalendar({ event }: { event: EventDraft }) {
+  const [busy, setBusy] = useState(false);
+  const href = icsLink([event]);
+  return (
+    <button
+      className="button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void addToCalendarApp(event)
+          .then((opened) => {
+            if (opened) return;
+            if (href) window.location.href = href;
+            else downloadIcs([event]);
+          })
+          .finally(() => setBusy(false));
+      }}
+    >
+      Add to calendar
+    </button>
+  );
+}
+
 export function Destinations({ events }: { events: EventDraft[] }) {
   const single = events.length === 1 ? events[0] : null;
+  const calendarApp = useCalendarApp();
 
   // Nothing ticked is not a state to act in: an .ics with no events in it is a
   // file that does nothing, and offering it is worse than saying so.
@@ -87,6 +136,9 @@ export function Destinations({ events }: { events: EventDraft[] }) {
 
   return (
     <div className="card-actions">
+      {/* First, where there is one: it is the only route that needs nothing
+          downloaded, nothing chosen and no account. */}
+      {calendarApp && <AddToCalendar event={single} />}
       <CalendarFile events={events} />
       <a className="button" href={googleCalendarUrl(single)} target="_blank" rel="noreferrer">
         Google

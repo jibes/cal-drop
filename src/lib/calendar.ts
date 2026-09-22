@@ -68,9 +68,11 @@ export function outlookCalendarUrl(event: EventDraft): string {
  * only by apps that keep a calendar, which is the actual intent, and it names
  * no vendor: whichever calendar the person uses opens with the event filled in.
  */
-/** Neither deep link carries an exception list, so recurrence is best-effort. */
+/** Neither web deep link carries an exception list, so recurrence is
+ *  best-effort there. The calendar file carries it, and so does the app's own
+ *  handover, which is worth saying rather than warning about all three. */
 export function deeplinkCaveat(event: EventDraft): string {
   return event.rrule
-    ? 'Deep links may drop the repeat rule — use the .ics for recurring events.'
+    ? 'Google and Outlook may drop the repeat rule — the calendar file keeps it.'
     : '';
 }
