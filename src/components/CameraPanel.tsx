@@ -29,6 +29,9 @@ interface Props {
 
 const PREFERENCE = 'caldrop.camera.v1';
 
+/** One transparent pixel. */
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 /** A little air under the panel, so the viewfinder does not sit on the edge
  *  of the screen when it takes all the room it is offered. */
 const BREATHING_ROOM = 16;
@@ -69,6 +72,10 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState(false);
+  /** The first frame has been drawn. Until then the video stays invisible:
+   *  what the browser paints in its place is its own placeholder, a grey play
+   *  button on Android, which is not the camera and should not be seen. */
+  const [showing, setShowing] = useState(false);
   const [error, setError] = useState('');
   const [torch, setTorchOn] = useState(false);
   const [torchable, setTorchable] = useState(false);
@@ -96,6 +103,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
     closeCamera(streamRef.current);
     streamRef.current = null;
     setLive(false);
+    setShowing(false);
     setTorchOn(false);
   }, []);
 
@@ -354,7 +362,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
           }}
         >
           <Icon name="camera" />
-          {standDown ? 'Scan' : 'Turn on the camera'}
+          Scan
         </button>
       </div>
     );
@@ -367,6 +375,10 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
       <div className="stage" ref={stageRef} style={{ '--ar': ratio } as React.CSSProperties}>
         <video
           ref={videoRef}
+          className={showing ? undefined : 'waiting'}
+          // A transparent poster, so there is no placeholder to draw at all.
+          poster={BLANK}
+          onPlaying={() => setShowing(true)}
           playsInline
           muted
           autoPlay
@@ -421,7 +433,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
         <button
           className="shutter"
           onClick={() => void capture()}
-          disabled={!live || busy}
+          disabled={!showing || busy}
           aria-label="Take the photo and read it"
         >
           <span />

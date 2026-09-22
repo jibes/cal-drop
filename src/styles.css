@@ -1152,3 +1152,7 @@ button:active:not(:disabled),
 .clip-icon .icon { width: 18px; height: 18px; }
 
 .bulk-tools { display: flex; gap: 8px; }
+
+/* Until the first frame, the frame is black — not the browser's placeholder. */
+.stage video { transition: opacity 0.15s ease; }
+.stage video.waiting { opacity: 0; }
