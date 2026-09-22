@@ -4,7 +4,9 @@ compatibility_date = "2025-01-01"
 
 [vars]
 # Comma-separated list of allowed origins, or "*" to allow any.
-ALLOWED_ORIGINS = "https://jibes.github.io"
+# https://localhost and capacitor://localhost are the native app (cal-drop-app)
+# on Android and iOS, which serve the same bundle from inside the app.
+ALLOWED_ORIGINS = "https://jibes.github.io,https://localhost,capacitor://localhost"
 
 # The OpenAI-compatible API this worker fronts.
 UPSTREAM_URL = "https://api.melious.ai/v1"
