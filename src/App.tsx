@@ -238,7 +238,7 @@ export default function App() {
     <div className={`app${viewfinder ? ' scanning' : ''}`}>
       <header className="top">
         <h1>
-          <span className="logo">📅</span> CalDrop
+          <img className="logo" src="./icon.svg" alt="" /> CalDrop
         </h1>
         <button className="ghost small" onClick={() => setShowSettings(true)}>
           Settings

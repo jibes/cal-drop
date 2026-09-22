@@ -15,8 +15,9 @@
     </linearGradient>
     <clipPath id="card"><rect x="292" y="330" width="440" height="430" rx="72"/></clipPath>
   </defs>
-  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
-  <rect width="1024" height="1024" rx="230" fill="url(#glow)"/>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <g transform="translate(512 512) scale(0.72) translate(-512 -512)">
   <!-- viewfinder -->
   <g fill="none" stroke="#fff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.92">
     <path d="M190 330 V250 Q190 190 250 190 H330"/>
@@ -34,4 +35,5 @@
   <!-- the drop, landing -->
   <path transform="translate(512 610)" fill="url(#drop)"
         d="M0 -122 C34 -76 88 -26 88 30 A88 88 0 0 1 -88 30 C-88 -26 -34 -76 0 -122 Z"/>
+  </g>
 </svg>

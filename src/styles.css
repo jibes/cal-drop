@@ -81,7 +81,13 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-.logo { margin-right: 6px; }
+/* The app's own mark, sized to the title it sits beside. */
+.logo {
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 8px;
+  vertical-align: -0.2em;
+}
 
 .lede { color: var(--muted); margin: 8px 0 20px; }
 

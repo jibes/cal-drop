@@ -159,7 +159,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
 
       <div className={`drop-actions${compact ? ' tight' : ''}`}>
         <label className="button" title="Choose a photo or PDF already on this device">
-          {compact ? '📎 File' : 'Choose file'}
+          {compact ? '📎 File' : '📎 Choose file'}
           <input
             type="file"
             accept="image/*,application/pdf"
