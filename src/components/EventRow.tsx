@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
 import { addToCalendarApp, calendarAppAvailable } from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
@@ -17,9 +18,8 @@ interface Props {
 
 /**
  * Three things can be done with an extracted event, and they do not overlap:
- * commit it somewhere, correct it, or drop it. The primary button is the one
- * that finishes the job; the rest live behind the ⋯ so they cost nothing to
- * ignore.
+ * commit it somewhere, correct it, or drop it. They share one row, and the
+ * primary button is the one that finishes the job.
  */
 
 /** Anything the model was unsure about opens its own editor without being asked. */
@@ -28,36 +28,9 @@ function needsAttention(event: EventDraft): boolean {
 }
 
 /**
- * The calendar file, served over https so the device decides what opens it.
- *
- * There is no way for a web page to put an event straight into a calendar app
- * on Android: Chromium adds CATEGORY_BROWSABLE to any intent a page launches,
- * and a calendar's insert filter does not declare it, so such an intent
- * matches nothing. The file is the only handover the browser is allowed to
- * make, and which app receives it is the device's default to set.
- */
-export function CalendarFile({ events }: { events: EventDraft[] }) {
-  const label = events.length > 1 ? `Calendar file (${events.length})` : 'Calendar file';
-  const href = icsLink(events);
-  return href ? (
-    <a className="button" href={href}>
-      {label}
-    </a>
-  ) : (
-    <button onClick={() => downloadIcs(events)}>{label}</button>
-  );
-}
-
-/**
- * Where a set of events can go. A calendar file takes as many as you like; the
- * Google and Outlook links each describe a single event, which is a limit of
- * those URLs and not a choice — so with several selected only the file can
- * carry them all.
- */
-/**
  * Whether this device has a calendar app this one can open directly. Asked
  * once, and only answered yes inside the native shell — in a browser there is
- * no plugin to ask, so the button never appears and the page is unchanged.
+ * no plugin to ask, so the main button hands over the calendar file instead.
  */
 function useCalendarApp(): boolean {
   const [ready, setReady] = useState(false);
@@ -73,35 +46,120 @@ function useCalendarApp(): boolean {
   return ready;
 }
 
-/**
- * Hand the event to the calendar itself. Where nothing answers after all —
- * a calendar uninstalled between the question and the tap — the file is still
- * there, so the button falls back to it rather than failing.
- */
-function AddToCalendar({ event }: { event: EventDraft }) {
-  const [busy, setBusy] = useState(false);
+/** Hand the event to the calendar itself; where nothing answers after all —
+ *  a calendar uninstalled between the question and the tap — the file is still
+ *  there, so it falls back to that rather than failing. */
+async function openInCalendarApp(event: EventDraft): Promise<void> {
+  if (await addToCalendarApp(event)) return;
   const href = icsLink([event]);
+  if (href) window.location.href = href;
+  else downloadIcs([event]);
+}
+
+/**
+ * The calendar file, served over https so the device decides what opens it.
+ *
+ * There is no way for a web page to put an event straight into a calendar app
+ * on Android: Chromium adds CATEGORY_BROWSABLE to any intent a page launches,
+ * and a calendar's insert filter does not declare it, so such an intent
+ * matches nothing. The file is the only handover the browser is allowed to
+ * make, and which app receives it is the device's default to set.
+ */
+function openCalendarFile(events: EventDraft[]): void {
+  const href = icsLink(events);
+  if (href) window.location.href = href;
+  else downloadIcs(events);
+}
+
+interface Option {
+  label: string;
+  run: () => void;
+}
+
+/**
+ * One way that is clearly the way, and the rest one tap further in.
+ *
+ * Four buttons of equal weight asked which calendar is yours before anything
+ * could happen; almost everyone wants the same one every time. The main
+ * button adds the event, and the ▾ beside it holds the alternatives.
+ */
+function AddButton({
+  label,
+  onAdd,
+  options,
+}: {
+  label: string;
+  onAdd: () => void | Promise<void>;
+  options: Option[];
+}) {
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
   return (
-    <button
-      className="button"
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        void addToCalendarApp(event)
-          .then((opened) => {
-            if (opened) return;
-            if (href) window.location.href = href;
-            else downloadIcs([event]);
-          })
-          .finally(() => setBusy(false));
-      }}
-    >
-      Add to calendar
-    </button>
+    <div className="split" ref={ref}>
+      <button
+        className="primary split-main"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void Promise.resolve(onAdd()).finally(() => setBusy(false));
+        }}
+      >
+        {label}
+      </button>
+      {options.length > 0 && (
+        <button
+          className="primary split-more"
+          aria-label="Other ways to add it"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          ▾
+        </button>
+      )}
+      {open && (
+        <div className="split-menu" role="menu">
+          {options.map((option) => (
+            <button
+              key={option.label}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                option.run();
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-export function Destinations({ events }: { events: EventDraft[] }) {
+/**
+ * Where a set of events can go. A calendar file takes as many as you like; the
+ * Google and Outlook links each describe a single event, which is a limit of
+ * those URLs and not a choice — so with several selected only the file can
+ * carry them all.
+ */
+export function Destinations({ events, children }: { events: EventDraft[]; children?: React.ReactNode }) {
   const single = events.length === 1 ? events[0] : null;
   const calendarApp = useCalendarApp();
 
@@ -109,43 +167,45 @@ export function Destinations({ events }: { events: EventDraft[] }) {
   // file that does nothing, and offering it is worse than saying so.
   if (events.length === 0) {
     return (
-      <div className="destinations">
-        <div className="card-actions">
-          <button className="button" disabled>
-            Calendar file
-          </button>
-        </div>
-        <p className="muted why">Nothing is selected.</p>
+      <div className="card-actions">
+        <button className="primary split-main" disabled>
+          Add to calendar
+        </button>
+        {children}
       </div>
     );
   }
 
-  // With several events selected there is only one way to take them, so the
-  // other two are not shown greyed out: a disabled button asks to be pressed
-  // and then explains itself in a tooltip no phone will ever show.
   if (!single) {
     return (
-      <div className="destinations">
-        <div className="card-actions">
-          <CalendarFile events={events} />
-        </div>
-        <p className="muted why">Google and Outlook take one event at a time.</p>
+      <div className="card-actions">
+        <AddButton
+          label={`Add ${events.length} to calendar`}
+          onAdd={() => openCalendarFile(events)}
+          options={[]}
+        />
+        {children}
       </div>
     );
   }
+
+  const web = (url: string) => () => window.open(url, '_blank', 'noreferrer');
+  const others: Option[] = [
+    // In the app the main button goes straight to the calendar, so the file is
+    // an alternative; in a browser the file is what the main button is.
+    ...(calendarApp ? [{ label: 'Calendar file (.ics)', run: () => openCalendarFile(events) }] : []),
+    { label: 'Google Calendar', run: web(googleCalendarUrl(single)) },
+    { label: 'Outlook', run: web(outlookCalendarUrl(single)) },
+  ];
 
   return (
     <div className="card-actions">
-      {/* First, where there is one: it is the only route that needs nothing
-          downloaded, nothing chosen and no account. */}
-      {calendarApp && <AddToCalendar event={single} />}
-      <CalendarFile events={events} />
-      <a className="button" href={googleCalendarUrl(single)} target="_blank" rel="noreferrer">
-        Google
-      </a>
-      <a className="button" href={outlookCalendarUrl(single)} target="_blank" rel="noreferrer">
-        Outlook
-      </a>
+      <AddButton
+        label="Add to calendar"
+        onAdd={() => (calendarApp ? openInCalendarApp(single) : openCalendarFile(events))}
+        options={others}
+      />
+      {children}
     </div>
   );
 }
@@ -206,18 +266,15 @@ export function EventRow({ event, selectable, selected, onToggle, onChange, onRe
         )}
       </div>
 
-      {/* Three ways to the same place, none of them this app's preference. */}
-      <Destinations events={[event]} />
-
-      <div className="card-actions secondary">
+      <Destinations events={[event]}>
         <button className="ghost small" onClick={() => setOpen((v) => !v)}>
           {open ? 'Done' : 'Edit'}
         </button>
         <button className="ghost small" onClick={onRemove}>
           Discard
         </button>
-        {caveat && <p className="muted">{caveat}</p>}
-      </div>
+      </Destinations>
+      {caveat && <p className="muted caveat">{caveat}</p>}
 
       {open && (
         <div className="editor">

@@ -168,7 +168,9 @@ export default function App() {
 
   // A live viewfinder takes the screen whether or not something has been read
   // already: asking for the camera again is asking to point it at something.
-  const viewfinder = scanning && !busy && !error;
+  // An error does not shrink it back into the page — the camera is only ever
+  // shown full screen, and the error floats over it like everything else.
+  const viewfinder = scanning && !busy;
 
   return (
     <div className={`app${viewfinder ? ' scanning' : ''}`}>
@@ -194,18 +196,26 @@ export default function App() {
         onLive={setScanning}
       />
 
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      {hint && !busy && (
-        <p className="hint-bar">
-          {hint}{' '}
-          <button className="ghost small" onClick={() => setHint('')}>
-            Dismiss
-          </button>
-        </p>
+      {/* Floating, so neither one moves the page — or the camera — around. */}
+      {(error || (hint && !busy)) && (
+        <div className="toasts">
+          {error && (
+            <div className="toast error" role="alert">
+              <p>{error}</p>
+              <button className="toast-close" onClick={() => setError('')} aria-label="Dismiss">
+                ✕
+              </button>
+            </div>
+          )}
+          {hint && !busy && (
+            <div className="toast hint-toast">
+              <p>{hint}</p>
+              <button className="toast-close" onClick={() => setHint('')} aria-label="Dismiss">
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {events.length > 1 && (

@@ -107,8 +107,18 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
     }
   };
 
+  /**
+   * Set from the first moment of opening, not the last. Tapping Scan both
+   * starts the camera and changes what the auto-start watches, so two starts
+   * arrive together — and the second, asking for a camera the first is still
+   * opening, failed with "could not start video source" and took the picture
+   * down with it.
+   */
+  const opening = useRef(false);
+
   const start = useCallback(async (wanted = rememberedLens()) => {
-    if (streamRef.current) return;
+    if (streamRef.current || opening.current) return;
+    opening.current = true;
     setError('');
     try {
       let stream = await openCamera(wanted);
@@ -139,6 +149,8 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
           ? 'Camera permission was declined.'
           : `The camera could not be opened: ${problem.message}`,
       );
+    } finally {
+      opening.current = false;
     }
   }, []);
 
@@ -321,9 +333,13 @@ export function CameraPanel({ onShots, onSystemCamera, busy, results, onLive }: 
 
   if (!cameraSupported()) return null;
 
-  if (dismissed || standDown || (!live && !error)) {
+  // The picture is only ever shown live, and live means full screen. A camera
+  // that would not open says why under the button that tries again, rather
+  // than as an empty frame in the middle of the page.
+  if (dismissed || standDown || !live) {
     return (
       <div className="camera off">
+        {error && !dismissed && !standDown && <p className="camera-error">{error}</p>}
         <button
           className="primary button"
           onClick={() => {
