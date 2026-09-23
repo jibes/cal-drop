@@ -718,7 +718,7 @@ async function callModel(
     // page, in which case the upload itself died and a smaller one may still
     // get through. Anything else (the origin refused, nothing listening, no
     // network) no smaller photo will fix, so it is named rather than retried.
-    if (Array.isArray(content) && (await reachEndpoint(options.signal)) === 'open') {
+    if (Array.isArray(content) && (await reachEndpoint(options.signal)).reach === 'open') {
       throw new TransportError('The photo could not be sent — the upload did not complete.');
     }
     throw new ReachError(await describeNetworkFailure(options.signal));

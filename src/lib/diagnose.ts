@@ -428,9 +428,9 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     } catch {
       /* the endpoint's own text will do */
     }
-    const reach = await reachEndpoint();
-    emit(`reach    ${reach === 'open' ? 'ok — answers this site' : describeReach(reach, host)}`);
-    if (reach !== 'open') {
+    const found = await reachEndpoint();
+    emit(`reach    ${found.reach === 'open' ? 'ok — answers this site' : describeReach(found, host)}`);
+    if (found.reach !== 'open') {
       emit('');
       emit('Nothing below can run until that is fixed.');
       return lines.join('\n');

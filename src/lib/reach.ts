@@ -12,39 +12,55 @@ import { endpoint } from './settings';
  *
  *   'open'      the endpoint answers this origin, preflight included — so the
  *               refusal was about that particular request
+ *   'refusing'  it answered this origin and the answer was an error: the
+ *               endpoint or what is in front of it, never CORS
  *   'preflight' a plain GET is served, but the OPTIONS a POST needs is not:
  *               opening the URL in a tab works while the app cannot call it
  *   'closed'    it answered, but not for this origin: ALLOWED_ORIGINS
  *   'silent'    nothing answered at all: not deployed, or unreachable
  *   'offline'   the device says it has no network
  */
-export type Reach = 'open' | 'preflight' | 'closed' | 'silent' | 'offline';
+export type Reach = 'open' | 'refusing' | 'preflight' | 'closed' | 'silent' | 'offline';
+
+export interface Reached {
+  reach: Reach;
+  /** The status the endpoint answered with, when it answered at all. */
+  status?: number;
+}
 
 const PUBLIC_GET = () => `${endpoint.replace(/\/+$/, '')}/test-image`;
 
-export async function reachEndpoint(signal?: AbortSignal): Promise<Reach> {
-  if (!endpoint) return 'silent';
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
+  if (!endpoint) return { reach: 'silent' };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return { reach: 'offline' };
 
   try {
     const res = await fetch(PUBLIC_GET(), { cache: 'no-store', signal });
-    // A simple GET is served. Everything the app actually sends is a POST
-    // carrying a content type and an access code, which the browser will not
-    // send until an OPTIONS has been answered — a different question, and the
-    // one a tab cannot ask. Any status here means it was answered.
-    if (res.ok) {
-      try {
-        await fetch(`${endpoint.replace(/\/+$/, '')}/pricing`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer preflight-probe' },
-          body: '{}',
-          cache: 'no-store',
-          signal,
-        });
-        return 'open';
-      } catch {
-        return 'preflight';
-      }
+
+    /**
+     * Reading that status at all is the finding: a browser hands back a
+     * response only when the origin was allowed, whatever the number is. This
+     * used to ask whether the status was 2xx, so a rate limit, a crash or an
+     * error page from whatever sits in front of the endpoint fell through to
+     * the no-cors question below — which always succeeds — and the app then
+     * accused an innocent ALLOWED_ORIGINS of the whole thing.
+     */
+    if (!res.ok) return { reach: 'refusing', status: res.status };
+
+    // Everything the app actually sends is a POST carrying a content type and
+    // an access code, which the browser will not send until an OPTIONS has
+    // been answered — a different question, and the one a tab cannot ask.
+    try {
+      await fetch(`${endpoint.replace(/\/+$/, '')}/pricing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer preflight-probe' },
+        body: '{}',
+        cache: 'no-store',
+        signal,
+      });
+      return { reach: 'open' };
+    } catch {
+      return { reach: 'preflight' };
     }
   } catch {
     /* either it is not there, or it is there and will not serve us */
@@ -54,19 +70,25 @@ export async function reachEndpoint(signal?: AbortSignal): Promise<Reach> {
     // An opaque response is still an answer: something is listening and it
     // replied. Only the reading of it is forbidden.
     await fetch(PUBLIC_GET(), { mode: 'no-cors', cache: 'no-store', signal });
-    return 'closed';
+    return { reach: 'closed' };
   } catch {
-    return 'silent';
+    return { reach: 'silent' };
   }
 }
 
 /** The same finding, in the words of what to do about it. */
-export function describeReach(reach: Reach, host: string): string {
-  switch (reach) {
+export function describeReach(found: Reached, host: string): string {
+  switch (found.reach) {
     case 'offline':
       return 'This device says it is offline, so nothing could be sent.';
     case 'open':
       return `${host} is up and does serve this site, so it was this request it would not take — most likely its size.`;
+    case 'refusing':
+      return (
+        `${host} is answering this site — so this is not about CORS — but it answered with ` +
+        `HTTP ${found.status}. That is the endpoint itself, or something in front of it: a limit ` +
+        'reached, a key it cannot use, or a crash. Its logs know which.'
+      );
     case 'preflight':
       return (
         `${host} serves a plain request from this site — which is why the URL opens in a browser tab — ` +
