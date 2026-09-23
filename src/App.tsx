@@ -10,6 +10,14 @@ import { firstUrlIn, onShared, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
 import { fetchPageText } from './lib/url';
 
+/** What to try next depends on what was read: a sharper photo is no help with a link. */
+const NOTHING_FOUND: Record<ExtractionSource['kind'], string> = {
+  image: 'No dated event was found in that photo. Try a sharper one, or add a page with the date on it.',
+  pdf: 'No dated event was found in that PDF.',
+  text: 'No dated event was found in that text. It needs a date to go on.',
+  url: 'No dated event was found on that page. If the event has its own page, try that link.',
+};
+
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
@@ -46,6 +54,11 @@ export default function App() {
   const addingRef = useRef(adding);
   addingRef.current = adding;
   const abortRef = useRef<AbortController | null>(null);
+  /** Set the moment a read starts, not on the next render: two shares can
+   *  arrive before React has drawn the first one's progress. */
+  const readingRef = useRef(false);
+  /** Shares that arrived while something was being read, oldest first. */
+  const waitingRef = useRef<{ files: File[]; text: string; url: string }[]>([]);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -62,6 +75,7 @@ export default function App() {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    readingRef.current = true;
     setError('');
     setOfferPage(false);
     setGlimpse('');
@@ -74,9 +88,7 @@ export default function App() {
         onProgress: ({ title, date }) => setGlimpse([title, date].filter(Boolean).join(' — ')),
         onNote: setHint,
       });
-      if (found.length === 0) {
-        setError('No dated event was found in that. Try a sharper photo, or paste the text.');
-      }
+      if (found.length === 0) setError(NOTHING_FOUND[source.kind]);
       setEvents((prev) =>
         found.length > 0 ? [...found, ...prev.filter((e) => !replace.includes(e.id))] : prev,
       );
@@ -89,8 +101,12 @@ export default function App() {
       setError(message);
       return null;
     } finally {
-      setBusy('');
-      setGlimpse('');
+      // A read replaced by a newer one leaves the newer one's state alone.
+      if (abortRef.current === controller) {
+        readingRef.current = false;
+        setBusy('');
+        setGlimpse('');
+      }
     }
   }, []);
 
@@ -211,11 +227,23 @@ export default function App() {
   // selection menu, a bookmarklet or a Shortcut.
   const receive = useCallback(
     (incoming: { files: File[]; text: string; url: string }) => {
+      // Sharing a second poster while the first is being read used to cancel
+      // the first, silently. It waits its turn instead.
+      if (readingRef.current) {
+        waitingRef.current.push(incoming);
+        return;
+      }
       if (incoming.files.length > 0) handleFiles(incoming.files);
       else handleText(incoming.url || incoming.text);
     },
     [handleFiles, handleText],
   );
+
+  // The next waiting share, once the screen is free.
+  useEffect(() => {
+    if (busy || waitingRef.current.length === 0) return;
+    receive(waitingRef.current.shift()!);
+  }, [busy, receive]);
 
   useEffect(() => {
     void takeIncoming().then((incoming) => {

@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
-import { addToCalendarApp, calendarAppAvailable } from '../lib/native';
+import { addToCalendarApp, calendarAppAvailable, openCalendarFileInApp } from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
 import { downloadIcs, icsLink } from '../lib/ics';
 import { Icon } from './Icon';
@@ -52,9 +52,7 @@ function useCalendarApp(): boolean {
  *  there, so it falls back to that rather than failing. */
 async function openInCalendarApp(event: EventDraft): Promise<void> {
   if (await addToCalendarApp(event)) return;
-  const href = icsLink([event]);
-  if (href) window.location.href = href;
-  else downloadIcs([event]);
+  await openCalendarFile([event]);
 }
 
 /**
@@ -66,7 +64,10 @@ async function openInCalendarApp(event: EventDraft): Promise<void> {
  * matches nothing. The file is the only handover the browser is allowed to
  * make, and which app receives it is the device's default to set.
  */
-function openCalendarFile(events: EventDraft[]): void {
+async function openCalendarFile(events: EventDraft[]): Promise<void> {
+  // Inside the app the link would leave for the browser and a download
+  // prompt; the app opens the file with the calendar itself instead.
+  if (await openCalendarFileInApp(events)) return;
   const href = icsLink(events);
   if (href) window.location.href = href;
   else downloadIcs(events);
@@ -194,7 +195,7 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
   const others: Option[] = [
     // In the app the main button goes straight to the calendar, so the file is
     // an alternative; in a browser the file is what the main button is.
-    ...(calendarApp ? [{ label: 'Calendar file (.ics)', run: () => openCalendarFile(events) }] : []),
+    ...(calendarApp ? [{ label: 'Calendar file (.ics)', run: () => void openCalendarFile(events) }] : []),
     { label: 'Google Calendar', run: web(googleCalendarUrl(single)) },
     { label: 'Outlook', run: web(outlookCalendarUrl(single)) },
   ];

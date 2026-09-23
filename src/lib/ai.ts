@@ -36,8 +36,9 @@ Rules:
 const JSON_SHAPE = `Answer with JSON and nothing else — no prose before or after it, no markdown fence.
 
 The JSON is one object: {"events": [ ... ]}, one entry per event, an empty array if there is none. Each entry has:
-- title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1) — always present
+- title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1)
 - start_time, end_date, end_time, location, timezone, rrule, description, url, notes — strings, "" when unknown
+- every field is always present: write "" rather than leaving one out, and fill start_time and location whenever the source gives them
 - description: the event's own particulars, at most two sentences. notes: one short sentence, only if the reading itself was uncertain.
 
 Stop as soon as the closing brace is written.`;
@@ -71,7 +72,27 @@ const EVENT_SCHEMA = {
             description: 'one short sentence about anything uncertain in the reading, or empty',
           },
         },
-        required: ['title', 'start_date', 'all_day', 'source_text', 'confidence'],
+        // Every field, not only the ones that can never be empty. A model
+        // that fills exactly what is required (gemma-4-31b does) otherwise
+        // answers with a title and a date and nothing else: no time, no place,
+        // on every source that reaches it as text. "" is how a field says
+        // "not given".
+        required: [
+          'title',
+          'start_date',
+          'start_time',
+          'end_date',
+          'end_time',
+          'all_day',
+          'location',
+          'timezone',
+          'rrule',
+          'description',
+          'url',
+          'source_text',
+          'confidence',
+          'notes',
+        ],
         additionalProperties: false,
       },
     },
@@ -423,8 +444,43 @@ const clip = (value: string | undefined, max: number): string => {
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 };
 
+/**
+ * A clock time in the words the date was read from: "19:30", "19.30",
+ * "20 Uhr", "8pm". Only asked for when the model said the event is not all
+ * day and then gave no time — its own answer says a time was there.
+ */
+function timeIn(text: string): string {
+  const clock = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/.exec(text);
+  if (clock) return `${clock[1].padStart(2, '0')}:${clock[2]}`;
+  const uhr = /\b([01]?\d|2[0-3])\s*Uhr\b/i.exec(text);
+  if (uhr) return `${uhr[1].padStart(2, '0')}:00`;
+  const ampm = /\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*([ap])\.?m\b/i.exec(text);
+  if (ampm) {
+    const hour = (Number(ampm[1]) % 12) + (ampm[3].toLowerCase() === 'p' ? 12 : 0);
+    return `${String(hour).padStart(2, '0')}:${ampm[2] ?? '00'}`;
+  }
+  return '';
+}
+
+/** Words that mean "no note", which a model writes where it was told to leave it empty. */
+const EMPTY_NOTE = /^(none|n\/?a|null|nil|no|-+|—|keine?)\.?$/i;
+
+/**
+ * A note is for doubt about the reading. One that comes with a confidence of
+ * 0.9 or more is the model thinking aloud — "the date matches the weekday",
+ * even "Wait, let me check" — and it painted the card orange and opened the
+ * editor for an event with nothing wrong with it.
+ */
+function noteFor(raw: RawEvent): string {
+  const note = clip(raw.notes, LIMITS.notes);
+  if (EMPTY_NOTE.test(note)) return '';
+  if (typeof raw.confidence === 'number' && raw.confidence >= 0.9) return '';
+  return note;
+}
+
 function toDraft(raw: RawEvent, i: number): EventDraft {
-  const startTime = normalizeTime(raw.start_time);
+  const startTime =
+    normalizeTime(raw.start_time) || (raw.all_day === false ? timeIn(raw.source_text || '') : '');
   const timezone = (raw.timezone || '').trim();
   return {
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
@@ -441,7 +497,7 @@ function toDraft(raw: RawEvent, i: number): EventDraft {
     url: (raw.url || '').trim(),
     sourceText: clip(raw.source_text, LIMITS.sourceText),
     confidence: typeof raw.confidence === 'number' ? Math.max(0, Math.min(1, raw.confidence)) : 0.5,
-    notes: clip(raw.notes, LIMITS.notes),
+    notes: noteFor(raw),
   };
 }
 
