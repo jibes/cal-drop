@@ -253,7 +253,7 @@ const chatUrl = () =>
  * endpoints never answer. The browser logs the real reason to the console and
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
-async function describeNetworkFailure(): Promise<string> {
+async function describeNetworkFailure(cause: Error, bytes: number): Promise<string> {
   if (!endpoint) return NO_ENDPOINT;
   let host = endpoint;
   try {
@@ -263,10 +263,31 @@ async function describeNetworkFailure(): Promise<string> {
   }
   // Three possibilities used to be listed here for the reader to choose from.
   // One public GET, asked twice, decides between them.
-  return [
-    `The request never left the browser.`,
-    describeReach(await reachEndpoint(), host),
-  ].join('\n');
+  const found = await reachEndpoint();
+  const lines = [`The request never left the browser.`, describeReach(found, host)];
+
+  /**
+   * When the endpoint is demonstrably up and serving this site, none of the
+   * usual explanations are left and the browser's own words are all there is
+   * to go on. They are vague by design — "Failed to fetch" for everything —
+   * but the name of the error and the size of what was being sent are facts,
+   * and they were being thrown away in favour of a guess about the size.
+   */
+  if (found.reach === 'open') {
+    const said = [cause.name, cause.message].filter(Boolean).join(': ');
+    lines.push(
+      `It was carrying ${describeSize(bytes)}${said ? `, and the browser said only “${said}”` : ''}.`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/** Bytes as something worth reading, since whether size is the problem is
+ *  exactly the question this failure raises. */
+function describeSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**
@@ -700,6 +721,24 @@ async function callModel(
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
+
+  /**
+   * Built before the request rather than inside it. This used to sit in the
+   * argument list, so anything that went wrong assembling it was caught by
+   * the catch below and reported as a request that never left the browser —
+   * true in the letter, and pointing at the network for a fault that was
+   * here all along.
+   */
+  let body: string;
+  try {
+    body = JSON.stringify(requestBody(content, attempt, stream, cap));
+  } catch (err) {
+    throw new Error(
+      `This source could not be turned into a request: ${(err as Error).message}. ` +
+        'That is a fault in this app, not in the endpoint.',
+    );
+  }
+
   let res: Response;
   try {
     res = await fetch(chatUrl(), {
@@ -709,7 +748,7 @@ async function callModel(
         'Content-Type': 'application/json',
         ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
-      body: JSON.stringify(requestBody(content, attempt, stream, cap)),
+      body,
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
@@ -721,7 +760,7 @@ async function callModel(
     if (Array.isArray(content) && (await reachEndpoint()).reach === 'open') {
       throw new TransportError('The photo could not be sent — the upload did not complete.');
     }
-    throw new ReachError(await describeNetworkFailure());
+    throw new ReachError(await describeNetworkFailure(err as Error, body.length));
   }
 
   if (!res.ok) {

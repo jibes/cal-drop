@@ -156,7 +156,11 @@ export function describeReach(found: Reached, host: string): string {
         'can be reached. Nothing can be said about the endpoint until that is back.'
       );
     case 'open':
-      return `${host} is up and does serve this site, so it was this request it would not take — most likely its size.`;
+      return (
+        `${host} is up and serves this site — checked just now — so it is neither down nor a ` +
+        'question of which origins it allows. The browser refused to send this particular ' +
+        'request.'
+      );
     case 'refusing':
       return (
         `${host} is answering this site — so this is not about CORS — but it answered with ` +
