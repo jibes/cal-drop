@@ -27,6 +27,10 @@ const PROBES: Probe[] = [
   { name: '+ stream: true', body: { stream: true, messages: [{ role: 'user', content: ASK }] } },
   { name: '+ temperature: 0', body: { temperature: 0, messages: [{ role: 'user', content: ASK }] } },
   { name: '+ max_tokens: 64', body: { max_tokens: 64, messages: [{ role: 'user', content: ASK }] } },
+  // Room enough for a rehearsal plan. A model asked for more than it will
+  // write does not always say so: this endpoint answers with empty chunks,
+  // which reads as a broken request until someone tries a smaller number.
+  { name: '+ max_tokens: 8000', body: { max_tokens: 8000, messages: [{ role: 'user', content: ASK }] } },
   {
     name: '+ system role',
     body: { messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: ASK }] },

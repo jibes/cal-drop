@@ -179,6 +179,29 @@ function rememberRung(shape: Shape, i: number): void {
   }
 }
 
+const CAP_KEY = 'caldrop.outputCap.v1';
+
+function rememberedCap(shape: Shape): number {
+  try {
+    const stored = localStorage.getItem(`${CAP_KEY}.${shape}`);
+    if (!stored) return 0;
+    const { index, at } = JSON.parse(stored) as { index?: number; at?: number };
+    if (!Number.isInteger(index) || index! < 0 || index! >= CAPS.length) return 0;
+    if (!Number.isFinite(at) || Date.now() - at! > MODE_TTL) return 0;
+    return index!;
+  } catch {
+    return 0;
+  }
+}
+
+function rememberCap(shape: Shape, index: number): void {
+  try {
+    localStorage.setItem(`${CAP_KEY}.${shape}`, JSON.stringify({ index, at: Date.now() }));
+  } catch {
+    /* storage disabled; we just re-learn each time */
+  }
+}
+
 /**
  * Every rung, starting with the one that worked last time.
  *
@@ -199,6 +222,10 @@ class RungError extends Error {}
 /** The answer was cut off in transit. The shape of the request was not the
  *  problem, so the same rung is worth one more try by another route. */
 class TransportError extends Error {}
+
+/** An answer with nothing in it, which may be the room asked for rather than
+ *  the shape of the asking. */
+class EmptyAnswer extends RungError {}
 
 /** The request could not reach the endpoint at all. Nothing about what was
  *  sent is to blame, so it is reported as found rather than second-guessed. */
@@ -568,6 +595,19 @@ async function readStream(
  * answered at length and the measurement was of something the app never sends.
  */
 /**
+ * How long an answer may run, biggest first.
+ *
+ * A cap is not a preference, it is a limit the model has: ask for more room
+ * than it will give and this provider does not clamp the number, it answers
+ * with empty chunks and says nothing at all — which is indistinguishable from
+ * a broken request and was, for one evening, reported as one. So the caps are
+ * walked like the rungs: the first that produces an answer is remembered, and
+ * a day later it is tried from the top again in case the model behind the
+ * endpoint has changed.
+ */
+const CAPS = [8000, 4000, 2000];
+
+/**
  * How long an answer may run when a cap is safe to send.
  *
  * 2000 was a poster's worth, and a poster is not the hard case: a rehearsal
@@ -578,7 +618,7 @@ async function readStream(
  * which is a long programme — still a ceiling, just not one that a normal
  * document walks into.
  */
-const MAX_OUTPUT_TOKENS = 8000;
+const MAX_OUTPUT_TOKENS = CAPS[0];
 
 const carriesImage = (content: string | ContentPart[]) =>
   Array.isArray(content) && content.some((part) => part.type === 'image_url');
@@ -587,6 +627,7 @@ export function requestBody(
   content: string | ContentPart[],
   attempt = rememberedRung('text'),
   stream = true,
+  cap = MAX_OUTPUT_TOKENS,
 ) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   return {
@@ -598,7 +639,7 @@ export function requestBody(
     // silently dropped" — but text has always been answered with it, and
     // without any cap an answer that does not stop has nothing to stop it.
     stream,
-    ...(carriesImage(content) ? {} : { max_tokens: MAX_OUTPUT_TOKENS }),
+    ...(carriesImage(content) ? {} : { max_tokens: cap }),
     messages: messagesFor(rung, content),
     ...(rung.temperature ? { temperature: 0 } : {}),
     ...(rung.structured === 'tools'
@@ -654,6 +695,7 @@ async function callModel(
   attempt: number,
   options: ExtractOptions,
   stream = true,
+  cap = MAX_OUTPUT_TOKENS,
 ): Promise<{ text: string; broken: boolean; truncated: boolean }> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
@@ -667,7 +709,7 @@ async function callModel(
         'Content-Type': 'application/json',
         ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
-      body: JSON.stringify(requestBody(content, attempt, stream)),
+      body: JSON.stringify(requestBody(content, attempt, stream, cap)),
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
@@ -723,13 +765,10 @@ async function callModel(
   // Nothing usable came back. That covers a refusal delivered as an event and
   // a server that accepts a parameter then ignores it — neither shows up in
   // the status — so give up one more assumption and try again.
-  throw new RungError(
-    error
-      ? `The model provider rejected the request: ${error}`
-      : raw.trim()
-        ? describeSilence(raw)
-        : 'The endpoint answered with an empty body.',
-  );
+  if (error) throw new RungError(`The model provider rejected the request: ${error}`);
+  // Chunks arrived and every one of them was empty. That can be the shape of
+  // the request — or the room asked for, which is why it has its own name.
+  throw new EmptyAnswer(raw.trim() ? describeSilence(raw) : 'The endpoint answered with an empty body.');
 }
 
 async function runPass(
@@ -749,6 +788,8 @@ async function runPass(
   // nothing, or — the only way a model that ignores tools can fail — by
   // answering in prose that will not parse; none of those is the endpoint's
   // final word while a rung remains untried.
+  let cap = rememberedCap(shape);
+
   for (const attempt of rungOrder(shape)) {
     /** One rung, by both routes: streamed, then — if the line broke rather
      *  than the request being wrong — whole, which needs the connection to
@@ -756,10 +797,32 @@ async function runPass(
     const tryRung = async (): Promise<EventDraft[]> => {
       let broken = false;
       for (const stream of [true, false]) {
-        let answer: { text: string; broken: boolean; truncated: boolean };
-        try {
-          answer = await callModel(content, settings, attempt, options, stream);
-        } catch (err) {
+        let answer: { text: string; broken: boolean; truncated: boolean } | undefined;
+        let failure: unknown;
+
+        /**
+         * Nothing at all came back. Before deciding the request was shaped
+         * wrong, ask for less room: a model given a cap beyond what it will
+         * write answers with empty chunks rather than with a complaint, and
+         * that looks exactly like a rung that does not work. The caps are
+         * descended here rather than left to the next rung to stumble into.
+         */
+        for (;;) {
+          try {
+            answer = await callModel(content, settings, attempt, options, stream, CAPS[cap]);
+            break;
+          } catch (err) {
+            if (err instanceof EmptyAnswer && cap + 1 < CAPS.length && !carriesImage(content)) {
+              cap += 1;
+              continue;
+            }
+            failure = err;
+            break;
+          }
+        }
+
+        if (!answer) {
+          const err = failure;
           if (err instanceof TransportError) {
             broken = true;
             last = err;
@@ -775,6 +838,7 @@ async function runPass(
         try {
           const parsed = parseJson(answer.text);
           rememberRung(shape, attempt);
+          rememberCap(shape, cap);
           const events = Array.isArray(parsed.events) ? parsed.events : [];
           return events.map(toDraft).filter((e) => e.startDate);
         } catch (err) {
@@ -790,6 +854,7 @@ async function runPass(
               .filter((e) => e.startDate);
             if (salvaged.length > 0) {
               rememberRung(shape, attempt);
+              rememberCap(shape, cap);
               options.onNote?.(
                 `That is a long list, and the endpoint stopped the answer before the end of it. ` +
                   `These ${salvaged.length} came through; anything after them did not.`,
