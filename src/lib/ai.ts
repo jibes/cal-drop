@@ -208,6 +208,8 @@ export interface ExtractOptions {
   signal?: AbortSignal;
   /** Called with the best-known title/date while the response is still arriving. */
   onProgress?: (preview: { title: string; date: string }) => void;
+  /** Something worth knowing that did not stop the run. */
+  onNote?: (note: string) => void;
 }
 
 const NO_ENDPOINT =
@@ -271,6 +273,54 @@ function previewFrom(buffer: string): { title: string; date: string } {
   const title = /"title"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(buffer)?.[1] ?? '';
   const date = /"start_date"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(buffer)?.[1] ?? '';
   return { title: title.replace(/\\"/g, '"'), date };
+}
+
+/**
+ * The events an unfinished answer did manage to write.
+ *
+ * A list cut off mid-object is not broken JSON in the useful sense: every
+ * object before the cut is complete and every one of them is an event someone
+ * wants. Rather than throw away twenty dates because the twenty-first is half
+ * written, the array is walked by brace depth and the whole objects are kept.
+ */
+function salvageEvents(content: string): RawEvent[] {
+  const start = content.indexOf('[', content.indexOf('"events"'));
+  if (start === -1) return [];
+
+  const found: RawEvent[] = [];
+  let depth = 0;
+  let from = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start + 1; i < content.length; i++) {
+    const ch = content[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') inString = !inString;
+    if (inString) continue;
+    if (ch === '{') {
+      if (depth === 0) from = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && from !== -1) {
+        try {
+          found.push(JSON.parse(content.slice(from, i + 1)) as RawEvent);
+        } catch {
+          /* a complete brace pair that is not an object: not an event either */
+        }
+        from = -1;
+      }
+    }
+  }
+  return found;
 }
 
 function parseJson(content: string): { events?: RawEvent[] } {
@@ -347,6 +397,18 @@ function toDraft(raw: RawEvent, i: number): EventDraft {
   };
 }
 
+/** The same fact from a whole, non-streamed body. */
+function wasCutShort(raw: string): boolean {
+  try {
+    return (
+      (JSON.parse(raw) as { choices?: { finish_reason?: string }[] }).choices?.[0]?.finish_reason ===
+      'length'
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface StreamDelta {
   content?: string;
   tool_calls?: { function?: { arguments?: string } }[];
@@ -406,7 +468,7 @@ const SILENCE_MS = 60000;
 async function readStream(
   body: ReadableStream<Uint8Array>,
   onProgress?: ExtractOptions['onProgress'],
-): Promise<{ text: string; raw: string; error: string; broken: boolean }> {
+): Promise<{ text: string; raw: string; error: string; broken: boolean; truncated: boolean }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -416,6 +478,7 @@ async function readStream(
   let lastPreview = '';
 
   let broken = false;
+  let truncated = false;
 
   for (;;) {
     let step: ReadableStreamReadResult<Uint8Array>;
@@ -452,7 +515,12 @@ async function readStream(
       if (!trimmed.startsWith('data:')) continue;
       const payload = trimmed.slice(5).trim();
       if (payload === '[DONE]') continue;
-      let event: { choices?: { delta?: StreamDelta }[]; error?: { message?: string } } | undefined;
+      let event:
+        | {
+            choices?: { delta?: StreamDelta; finish_reason?: string }[];
+            error?: { message?: string };
+          }
+        | undefined;
       try {
         event = JSON.parse(payload);
       } catch {
@@ -461,6 +529,8 @@ async function readStream(
       // A refusal can arrive as an event on a 200 response, so the status code
       // never sees it; without this it reads as an answer containing nothing.
       if (event?.error?.message) error = event.error.message;
+      // "length" means the model was still writing when it ran out of room.
+      if (event?.choices?.[0]?.finish_reason === 'length') truncated = true;
       const delta = event?.choices?.[0]?.delta;
       out += delta?.tool_calls?.[0]?.function?.arguments ?? delta?.content ?? '';
     }
@@ -475,7 +545,13 @@ async function readStream(
     }
   }
   // An answer that never streamed is still an answer.
-  return { text: out.trim() ? out : fromCompletion(raw), raw, error, broken };
+  return {
+    text: out.trim() ? out : fromCompletion(raw),
+    raw,
+    error,
+    broken,
+    truncated: truncated || wasCutShort(raw),
+  };
 }
 
 /**
@@ -491,9 +567,18 @@ async function readStream(
  * would drift, and did: without the structured-output constraint the model
  * answered at length and the measurement was of something the app never sends.
  */
-/** How long an answer may run when a cap is safe to send. Measured runs end
- *  at about 1300 tokens, so this is room to finish rather than a budget. */
-const MAX_OUTPUT_TOKENS = 2000;
+/**
+ * How long an answer may run when a cap is safe to send.
+ *
+ * 2000 was a poster's worth, and a poster is not the hard case: a rehearsal
+ * plan or a festival programme is a table of twenty or thirty dates, and each
+ * one costs a hundred tokens or so to write down. Cut off mid-list, the JSON
+ * does not parse, every rung is tried against the same wall, and the reader
+ * is told their endpoint is broken. This is room for around sixty events,
+ * which is a long programme — still a ceiling, just not one that a normal
+ * document walks into.
+ */
+const MAX_OUTPUT_TOKENS = 8000;
 
 const carriesImage = (content: string | ContentPart[]) =>
   Array.isArray(content) && content.some((part) => part.type === 'image_url');
@@ -569,7 +654,7 @@ async function callModel(
   attempt: number,
   options: ExtractOptions,
   stream = true,
-): Promise<{ text: string; broken: boolean }> {
+): Promise<{ text: string; broken: boolean; truncated: boolean }> {
   if (!endpoint) throw new Error(NO_ENDPOINT);
 
   const code = settings.accessCode.trim();
@@ -619,10 +704,10 @@ async function callModel(
 
   if (!res.body) throw new Error('The endpoint returned no response body.');
 
-  const { text, raw, error, broken } = await readStream(res.body, options.onProgress);
+  const { text, raw, error, broken, truncated } = await readStream(res.body, options.onProgress);
   // A broken stream can still leave a whole answer behind, and often leaves
   // half of one — which only the parse can tell apart, so it travels with it.
-  if (text.trim()) return { text, broken };
+  if (text.trim()) return { text, broken, truncated };
 
   // Cut off with nothing to show for it. A long-lived response carrying a
   // photo is the one most likely to be dropped between the provider, the
@@ -671,7 +756,7 @@ async function runPass(
     const tryRung = async (): Promise<EventDraft[]> => {
       let broken = false;
       for (const stream of [true, false]) {
-        let answer: { text: string; broken: boolean };
+        let answer: { text: string; broken: boolean; truncated: boolean };
         try {
           answer = await callModel(content, settings, attempt, options, stream);
         } catch (err) {
@@ -693,6 +778,29 @@ async function runPass(
           const events = Array.isArray(parsed.events) ? parsed.events : [];
           return events.map(toDraft).filter((e) => e.startDate);
         } catch (err) {
+          /**
+           * An answer that ran out of room is not a rung that does not work:
+           * the shape was right and there was simply more to say than there
+           * was room to say it. Walking the ladder would ask four times and
+           * hit the same wall four times, so what was written is kept instead.
+           */
+          if (answer.truncated) {
+            const salvaged = salvageEvents(answer.text)
+              .map(toDraft)
+              .filter((e) => e.startDate);
+            if (salvaged.length > 0) {
+              rememberRung(shape, attempt);
+              options.onNote?.(
+                `That is a long list, and the endpoint stopped the answer before the end of it. ` +
+                  `These ${salvaged.length} came through; anything after them did not.`,
+              );
+              return salvaged;
+            }
+            throw new Error(
+              'The answer was cut off before a single whole event came through. ' +
+                'The source is longer than this endpoint will answer in one go — try a part of it.',
+            );
+          }
           last = err as Error;
           // Half an answer is not the rung's fault; a whole one that will not
           // parse is, and asking again the same way would only repeat it.

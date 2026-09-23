@@ -72,6 +72,7 @@ export default function App() {
       const found = await extractEvents(source, current, {
         signal: controller.signal,
         onProgress: ({ title, date }) => setGlimpse([title, date].filter(Boolean).join(' — ')),
+        onNote: setHint,
       });
       if (found.length === 0) {
         setError('No dated event was found in that. Try a sharper photo, or paste the text.');
