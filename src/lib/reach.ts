@@ -26,9 +26,36 @@ export interface Reached {
   reach: Reach;
   /** The status the endpoint answered with, when it answered at all. */
   status?: number;
+  /** The first line of that answer — the error's own words, when it had any. */
+  said?: string;
 }
 
 const PUBLIC_GET = () => `${endpoint.replace(/\/+$/, '')}/test-image`;
+
+/**
+ * What an error answer says, in one line. A worker's own refusals are short
+ * sentences or small JSON; what sits in front of one answers in an HTML page,
+ * which says nothing worth repeating and is skipped.
+ */
+async function firstLine(res: Response): Promise<string | undefined> {
+  if ((res.headers.get('content-type') || '').includes('html')) return undefined;
+  try {
+    const body = (await res.text()).slice(0, 600).trim();
+    if (!body || body.startsWith('<')) return undefined;
+    let said = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
+      const found = typeof parsed.error === 'string' ? parsed.error : parsed.message;
+      if (typeof found === 'string' && found.trim()) said = found.trim();
+    } catch {
+      /* not JSON, so the text itself is the message */
+    }
+    said = said.split('\n')[0].trim();
+    return said ? said.slice(0, 160) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
   if (!endpoint) return { reach: 'silent' };
@@ -45,7 +72,7 @@ export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
      * the no-cors question below — which always succeeds — and the app then
      * accused an innocent ALLOWED_ORIGINS of the whole thing.
      */
-    if (!res.ok) return { reach: 'refusing', status: res.status };
+    if (!res.ok) return { reach: 'refusing', status: res.status, said: await firstLine(res) };
 
     // Everything the app actually sends is a POST carrying a content type and
     // an access code, which the browser will not send until an OPTIONS has
@@ -86,8 +113,9 @@ export function describeReach(found: Reached, host: string): string {
     case 'refusing':
       return (
         `${host} is answering this site — so this is not about CORS — but it answered with ` +
-        `HTTP ${found.status}. That is the endpoint itself, or something in front of it: a limit ` +
-        'reached, a key it cannot use, or a crash. Its logs know which.'
+        `HTTP ${found.status}${found.said ? `: “${found.said}”` : ''}. That is the endpoint itself, ` +
+        'or something in front of it: a limit reached, a key it cannot use, or a crash.' +
+        (found.said ? '' : ' Its logs know which.')
       );
     case 'preflight':
       return (
