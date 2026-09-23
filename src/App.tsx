@@ -41,8 +41,9 @@ export default function App() {
    * The photos behind the last result, and what they produced. One event can
    * need more than one picture — the back of a flyer, a poster too tall for a
    * frame — and that is only known once the first has been read. So a page is
-   * added to a result, not decided on before the first photo: the next photo
-   * is read together with these, and its answer replaces theirs.
+   * offered where it is needed: on "no dated event was found", the one answer
+   * that says the photo was not enough. The next photo is then read together
+   * with these.
    */
   const [pages, setPages] = useState<{ images: string[]; ids: string[] } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -348,18 +349,6 @@ export default function App() {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {pages && pages.ids.length > 0 && !busy && events.some((e) => pages.ids.includes(e.id)) && (
-        <div className="pages-bar">
-          <span className="pages-what">
-            <Icon name="camera" />
-            Read from {pages.images.length === 1 ? '1 photo' : `${pages.images.length} photos`}
-          </span>
-          <button className="ghost small" onClick={addPage}>
-            ＋ Add a page
-          </button>
         </div>
       )}
 

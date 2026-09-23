@@ -958,7 +958,6 @@ button:active:not(:disabled),
 
 /* Nothing else belongs on a camera screen. */
 .app.scanning .foot,
-.app.scanning .pages-bar,
 .app.scanning .results,
 .app.scanning .bulk { display: none; }
 
@@ -1100,22 +1099,7 @@ button:active:not(:disabled),
 /* ---- more than one photo of the same thing ---- */
 
 
-/* Which photos the result came from, and the way to add one to them. */
-.pages-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 20px;
-  padding: 4px 4px 4px 14px;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
 
-.pages-bar + .results,
-.pages-bar + .bulk { margin-top: 12px; }
 
 .toast.adding-toast { border-color: var(--accent); border-left-width: 4px; }
 
@@ -1148,7 +1132,6 @@ button:active:not(:disabled),
    above them sat 6px further in than the ✕ below it. */
 .app.scanning .stage-top { left: 14px; right: 14px; }
 
-.pages-what { display: inline-flex; align-items: center; gap: 8px; }
 .clip-icon .icon { width: 18px; height: 18px; }
 
 .bulk-tools { display: flex; gap: 8px; }
