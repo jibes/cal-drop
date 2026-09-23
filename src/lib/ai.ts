@@ -201,7 +201,8 @@ function rememberRung(shape: Shape, i: number): void {
   }
 }
 
-const CAP_KEY = 'caldrop.outputCap.v1';
+// v2: the list gained 16000 at the front, so v1's indices mean other caps.
+const CAP_KEY = 'caldrop.outputCap.v2';
 
 function rememberedCap(shape: Shape): number {
   try {
@@ -248,6 +249,15 @@ class TransportError extends Error {}
 /** An answer with nothing in it, which may be the room asked for rather than
  *  the shape of the asking. */
 class EmptyAnswer extends RungError {}
+
+/**
+ * The model used the whole allowance before writing a word — thinking, on a
+ * model that reasons before it answers. A twenty-row rehearsal plan did this
+ * at 4000 tokens: every one of them reasoning, the stream ending on "length"
+ * with nothing in it. Less room cannot help and another way of asking hits
+ * the same wall, so neither is tried; the reader is told what happened.
+ */
+class ThoughtTooLong extends Error {}
 
 /** The request could not reach the endpoint at all. Nothing about what was
  *  sent is to blame, so it is reported as found rather than second-guessed. */
@@ -683,7 +693,7 @@ async function readStream(
  * a day later it is tried from the top again in case the model behind the
  * endpoint has changed.
  */
-const CAPS = [8000, 4000, 2000];
+const CAPS = [16000, 8000, 4000, 2000];
 
 /**
  * How long an answer may run when a cap is safe to send.
@@ -692,9 +702,11 @@ const CAPS = [8000, 4000, 2000];
  * plan or a festival programme is a table of twenty or thirty dates, and each
  * one costs a hundred tokens or so to write down. Cut off mid-list, the JSON
  * does not parse, every rung is tried against the same wall, and the reader
- * is told their endpoint is broken. This is room for around sixty events,
- * which is a long programme — still a ceiling, just not one that a normal
- * document walks into.
+ * is told their endpoint is broken. And the text model reasons before it
+ * answers, which comes out of the same allowance: a rehearsal plan used 4000
+ * tokens thinking and had written nothing. At 16000, half can go on thinking
+ * and there is still room for around sixty events — still a ceiling, just not
+ * one that a normal document walks into.
  */
 const MAX_OUTPUT_TOKENS = CAPS[0];
 
@@ -862,6 +874,13 @@ async function callModel(
   // a server that accepts a parameter then ignores it — neither shows up in
   // the status — so give up one more assumption and try again.
   if (error) throw new RungError(`The model provider rejected the request: ${error}`);
+  // Stopped for length with nothing written: the room went on thinking.
+  if (truncated) {
+    throw new ThoughtTooLong(
+      'The model spent its whole allowance working this out and stopped before writing any events. ' +
+        'A long list needs more room than the endpoint gave it; a shorter excerpt will get through.',
+    );
+  }
   // Chunks arrived and every one of them was empty. That can be the shape of
   // the request — or the room asked for, which is why it has its own name.
   throw new EmptyAnswer(raw.trim() ? describeSilence(raw) : 'The endpoint answered with an empty body.');

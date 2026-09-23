@@ -30,7 +30,9 @@ const DEFAULTS = {
  * capped here rather than trusted.
  */
 const FORWARDED = ['messages', 'stream', 'temperature', 'tools', 'tool_choice', 'response_format'];
-const MAX_TOKENS_CEILING = 4000;
+// Room for a long programme on a model that reasons first: a twenty-row
+// rehearsal plan spent 4000 tokens thinking and had written nothing yet.
+const MAX_TOKENS_CEILING = 16000;
 
 function askedFor(body, model) {
   const out = { model };
