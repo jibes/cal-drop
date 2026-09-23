@@ -20,6 +20,8 @@ interface Props {
   onLive?: (live: boolean) => void;
   /** Open the camera without waiting to be asked: a page is being added. */
   wantCamera?: boolean;
+  /** Paste found nothing to read. */
+  onNothingToPaste?: () => void;
 }
 
 /** The steps a source goes through, so there is something to watch before the
@@ -37,7 +39,7 @@ function stepAt(stage: string, glimpse: string): number {
  * One target for everything. Deciding between "image", "PDF", "link" and "text"
  * is the app's job, not a choice to put in front of someone holding a phone.
  */
-export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results, fullScreen, onLive, wantCamera }: Props) {
+export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCancel, preview, results, fullScreen, onLive, wantCamera, onNothingToPaste }: Props) {
   /**
    * The row of ways in shrinks to make room for a result — but not while the
    * camera has the screen. There they float over the frame with room to
@@ -142,7 +144,7 @@ export function UniversalInput({ onFiles, onText, onShots, stage, glimpse, onCan
           of it: the ways in shrink to one quiet row and give the screen back. */}
       {!compact && <div className="or">or</div>}
 
-      <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={compact} />
+      <ClipboardCard onText={onText} onShots={onShots} busy={busy} compact={compact} onNothing={onNothingToPaste} />
 
 
       <div className={`drop-actions${compact ? ' tight' : ''}`}>

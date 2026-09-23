@@ -9,6 +9,8 @@ interface Props {
   busy: boolean;
   /** Results are on screen, so this is one of a row of small buttons. */
   compact?: boolean;
+  /** Paste was pressed and there was nothing to read. */
+  onNothing?: () => void;
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * is a tap. Where the browser will not let the clipboard be read unprompted,
  * the button reads and sends in one gesture instead.
  */
-export function ClipboardCard({ onText, onShots, busy, compact = false }: Props) {
+export function ClipboardCard({ onText, onShots, busy, compact = false, onNothing }: Props) {
   const [peek, setPeek] = useState<ClipboardPeek | null>(null);
   const [silent, setSilent] = useState(false);
 
@@ -48,7 +50,11 @@ export function ClipboardCard({ onText, onShots, busy, compact = false }: Props)
 
   const send = useCallback(
     (found: ClipboardPeek | null) => {
-      if (!found) return;
+      // A tap that did nothing looked like a button that did not work.
+      if (!found) {
+        onNothing?.();
+        return;
+      }
       if (found.kind === 'image' && found.image) {
         const longest = Math.max(found.image.width, found.image.height);
         onShots(
@@ -62,7 +68,7 @@ export function ClipboardCard({ onText, onShots, busy, compact = false }: Props)
       }
       setPeek(null);
     },
-    [onShots, onText],
+    [onShots, onText, onNothing],
   );
 
   if (!clipboardReadable()) return null;

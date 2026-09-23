@@ -99,6 +99,37 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
     }
   });
 
+  /**
+   * The first frames are dark: the sensor is still finding its exposure.
+   * Shown at once, the viewfinder faded in from black to murk to picture, so
+   * it waits for about a dozen frames — or a second at most, so a slow camera
+   * is never a black screen for long.
+   */
+  const revealAfterSettling = useCallback((video: HTMLVideoElement) => {
+    let shown = false;
+    // A lens switch starts a new stream; a timer left from the old one must
+    // not reveal the new one before its own frames have settled.
+    const stream = streamRef.current;
+    const show = () => {
+      if (!shown && streamRef.current === stream) setShowing(true);
+      shown = true;
+    };
+    setTimeout(show, 1000);
+    const frames = (video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (callback: () => void) => number;
+    }).requestVideoFrameCallback;
+    if (!frames) {
+      setTimeout(show, 400);
+      return;
+    }
+    let seen = 0;
+    const tick = () => {
+      if (++seen >= 12) show();
+      else frames.call(video, tick);
+    };
+    frames.call(video, tick);
+  }, []);
+
   const stop = useCallback(() => {
     closeCamera(streamRef.current);
     streamRef.current = null;
@@ -378,7 +409,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
           className={showing ? undefined : 'waiting'}
           // A transparent poster, so there is no placeholder to draw at all.
           poster={BLANK}
-          onPlaying={() => setShowing(true)}
+          onPlaying={(e) => revealAfterSettling(e.currentTarget)}
           playsInline
           muted
           autoPlay

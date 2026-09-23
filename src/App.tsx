@@ -70,6 +70,8 @@ export default function App() {
     build: () => Promise<ExtractionSource>,
     stage: string,
     replace: string[] = [],
+    /** What the second step says; it starts with "Sending", which the progress steps read. */
+    sending = 'Sending it to the model…',
   ): Promise<EventDraft[] | null> => {
     const current = settingsRef.current;
     abortRef.current?.abort();
@@ -82,7 +84,7 @@ export default function App() {
     setBusy(stage);
     try {
       const source = await build();
-      setBusy('Sending it to the model…');
+      setBusy(sending);
       const found = await extractEvents(source, current, {
         signal: controller.signal,
         onProgress: ({ title, date }) => setGlimpse([title, date].filter(Boolean).join(' — ')),
@@ -131,6 +133,10 @@ export default function App() {
         },
         base ? `Reading page ${base.images.length + 1} with the rest…` : stage,
         base?.ids ?? [],
+        // Said all the way through, not only for the moment before sending.
+        base
+          ? `Sending page ${base.images.length + 1} with the ${base.images.length === 1 ? 'first' : `other ${base.images.length}`}…`
+          : undefined,
       );
       if (!found || all.length === 0) return;
       // An added page that found nothing leaves the earlier result standing, so
@@ -300,6 +306,9 @@ export default function App() {
         fullScreen={viewfinder}
         onLive={setScanning}
         wantCamera={wantCamera}
+        onNothingToPaste={() =>
+          setHint('Nothing to paste: the clipboard is empty or could not be read. Copy a poster, a link or its text first.')
+        }
       />
 
       {/* Floating, so neither one moves the page — or the camera — around. */}

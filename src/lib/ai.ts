@@ -13,6 +13,7 @@ Rules:
 - Times may be written as "20 Uhr", "8pm", "20:00", "Einlass 19:00 / Beginn 20:00". Use the start of the event itself, and mention a doors time in the description.
 - If only a date and no time is given, set all_day true.
 - A source may list several events (a festival programme, a series). Return each as its own object.
+- When several events each name their own place, every event keeps the place printed with its own date. Never carry one event's venue over to the next.
 - For a recurring event ("every Tuesday", "jeden ersten Freitag im Monat") set rrule to an RFC 5545 recurrence rule body and set start_date to the first occurrence.
 - Set timezone to the IANA zone of the venue when the place is clear enough to know it (Berlin venue -> Europe/Berlin). Leave it empty if you are guessing.
 - source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it, and keep it to the sentence the date was in.
