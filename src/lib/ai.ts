@@ -577,8 +577,14 @@ function fromCompletion(raw: string): string {
 
 /** Nothing at all for this long means the answer is not coming. Long enough
  *  that a slow model thinking before its first token is not cut off, short
- *  enough that a spinner does not become the whole experience. */
-const SILENCE_MS = 60000;
+ *  enough that a spinner does not become the whole experience.
+ *
+ *  It was 60 s. The provider queues requests at busy times and says nothing
+ *  until a model is free: measured, 15 s before the first token in two runs
+ *  of five, and past 60 s three times in a row once. Each give-up sent the
+ *  request to the back of the queue again, so a wait of a minute and a bit
+ *  became three minutes. A longer wait lets the queue come round. */
+const SILENCE_MS = 120000;
 
 async function readStream(
   body: ReadableStream<Uint8Array>,
