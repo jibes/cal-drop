@@ -34,13 +34,39 @@ const FORWARDED = ['messages', 'stream', 'temperature', 'tools', 'tool_choice', 
 // rehearsal plan spent 4000 tokens thinking and had written nothing yet.
 const MAX_TOKENS_CEILING = 16000;
 
+/**
+ * How much a reasoning model may think before it answers, in the three shapes
+ * providers accept. Passed on only in these shapes and with these values: the
+ * thinking is billed like the answer, and a caller must not be able to send
+ * the provider anything else in its name.
+ */
+const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'];
+
+function reasoningAskedFor(body) {
+  const out = {};
+  if (EFFORTS.includes(body.reasoning_effort)) out.reasoning_effort = body.reasoning_effort;
+  if (EFFORTS.includes(body.reasoning?.effort)) out.reasoning = { effort: body.reasoning.effort };
+  if (typeof body.chat_template_kwargs?.enable_thinking === 'boolean') {
+    out.chat_template_kwargs = { enable_thinking: body.chat_template_kwargs.enable_thinking };
+  }
+  return out;
+}
+
 function askedFor(body, model) {
-  const out = { model };
+  const out = { model, ...reasoningAskedFor(body) };
   for (const key of FORWARDED) if (body[key] !== undefined) out[key] = body[key];
   if (body.max_tokens !== undefined) {
     const wanted = Number(body.max_tokens);
     if (Number.isFinite(wanted) && wanted > 0) out.max_tokens = Math.min(wanted, MAX_TOKENS_CEILING);
   }
+  return out;
+}
+
+/** What goes upstream: the caller's request, on the model that answers it. */
+function upstreamBody(body, config) {
+  if (carriesImage(body)) return askedFor(body, config.visionModel);
+  const out = askedFor(body, config.model);
+  if (config.reasoningEffort && !out.reasoning_effort) out.reasoning_effort = config.reasoningEffort;
   return out;
 }
 
@@ -65,6 +91,10 @@ const settings = (env) => ({
   // Falls back to MODEL, so an endpoint whose model reads images needs no
   // second setting and nothing changes for one that never sees a picture.
   visionModel: String(env.VISION_MODEL || env.MODEL || DEFAULTS.MODEL),
+  // How much the text model thinks first, when the caller does not say. Only
+  // for text: the vision model does not reason, and a parameter it does not
+  // know is a request a provider may refuse.
+  reasoningEffort: EFFORTS.includes(env.REASONING_EFFORT) ? env.REASONING_EFFORT : '',
   dailyLimit: Number(env.DAILY_LIMIT || DEFAULTS.DAILY_LIMIT),
   maxBodyBytes: Number(env.MAX_BODY_BYTES || DEFAULTS.MAX_BODY_BYTES),
   maxPageBytes: Number(env.MAX_PAGE_BYTES || DEFAULTS.MAX_PAGE_BYTES),
@@ -512,7 +542,7 @@ export default {
           // the page sent is discarded so there is one answer to "which model".
           // A request carrying pictures may need a different one, since plenty
           // of good text models cannot read an image at all.
-          body: JSON.stringify(askedFor(body, carriesImage(body) ? config.visionModel : config.model)),
+          body: JSON.stringify(upstreamBody(body, config)),
         },
       ));
     } catch {

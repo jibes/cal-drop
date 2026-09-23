@@ -15,6 +15,13 @@ UPSTREAM_URL = "https://api.melious.ai/v1"
 # whatever it sends is discarded.
 MODEL = "gemma-4-31b"
 
+# How long the text model thinks before it answers, as the OpenAI API's own
+# reasoning_effort: none, minimal, low, medium or high. Unset leaves it to the
+# provider. gemma-4-31b thinks at length by default: a 21-row rehearsal plan
+# took 127 s and 8800 reasoning tokens, and 42 s with "none" — every date
+# still right. Text requests only; the vision model does not reason.
+REASONING_EFFORT = "none"
+
 # Used only for requests that attach a picture. Leave unset to use MODEL for
 # everything. gemma-4-31b is documented as multimodal but this API refuses
 # every image encoding for it, and qwen2.5-vl-72b-instruct answers with a
