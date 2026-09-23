@@ -17,8 +17,10 @@ import { endpoint } from './settings';
  *   'preflight' a plain GET is served, but the OPTIONS a POST needs is not:
  *               opening the URL in a tab works while the app cannot call it
  *   'closed'    it answered, but not for this origin: ALLOWED_ORIGINS
- *   'silent'    nothing answered at all: not deployed, or unreachable
- *   'offline'   the device says it has no network
+ *   'silent'    nothing answered at all, while this device's own network is
+ *               working: not deployed, down, or blocked on the way out
+ *   'offline'   the device has no working network, so nothing can be said
+ *               about the endpoint at all
  */
 export type Reach = 'open' | 'refusing' | 'preflight' | 'closed' | 'silent' | 'offline';
 
@@ -57,10 +59,50 @@ async function firstLine(res: Response): Promise<string | undefined> {
   }
 }
 
-export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
+/**
+ * Is this device's network working at all?
+ *
+ * The page itself is served from somewhere, and that somewhere can be asked.
+ * A POST is used rather than a GET for two reasons: the service worker hands
+ * back the cached shell for a same-origin GET it cannot fetch, which would
+ * answer the wrong question entirely, and it ignores anything that is not a
+ * GET — so a POST goes to the network untouched. What is answered does not
+ * matter; GitHub Pages says 405. That it answered is the whole point.
+ */
+async function ownNetworkWorks(signal: AbortSignal): Promise<boolean> {
+  if (typeof location === 'undefined') return true;
+  try {
+    await fetch(location.href, { method: 'POST', cache: 'no-store', signal });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** How long a probe is given before the silence is taken as the answer. */
+const PROBE_MS = 8000;
+
+export async function reachEndpoint(): Promise<Reached> {
   if (!endpoint) return { reach: 'silent' };
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return { reach: 'offline' };
 
+  /**
+   * On its own signal, deliberately. This runs to explain a request that was
+   * just cancelled or that died, and a diagnosis the failure itself can
+   * cancel reports silence and means "I was aborted" — which is how a working
+   * endpoint came to be called down.
+   */
+  const own = new AbortController();
+  const signal = own.signal;
+  const timer = setTimeout(() => own.abort(), PROBE_MS);
+  try {
+    return await ask(signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ask(signal: AbortSignal): Promise<Reached> {
   try {
     const res = await fetch(PUBLIC_GET(), { cache: 'no-store', signal });
 
@@ -99,7 +141,9 @@ export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
     await fetch(PUBLIC_GET(), { mode: 'no-cors', cache: 'no-store', signal });
     return { reach: 'closed' };
   } catch {
-    return { reach: 'silent' };
+    // Nothing came back either way. Before that is laid at the endpoint's
+    // door, ask whether anything at all can be reached from here.
+    return { reach: (await ownNetworkWorks(signal)) ? 'silent' : 'offline' };
   }
 }
 
@@ -107,7 +151,10 @@ export async function reachEndpoint(signal?: AbortSignal): Promise<Reached> {
 export function describeReach(found: Reached, host: string): string {
   switch (found.reach) {
     case 'offline':
-      return 'This device says it is offline, so nothing could be sent.';
+      return (
+        'This device has no working connection right now — not even the page it is running from ' +
+        'can be reached. Nothing can be said about the endpoint until that is back.'
+      );
     case 'open':
       return `${host} is up and does serve this site, so it was this request it would not take — most likely its size.`;
     case 'refusing':
@@ -128,6 +175,10 @@ export function describeReach(found: Reached, host: string): string {
       return `${host} is answering, but not for ${location.origin}: its ALLOWED_ORIGINS does not list this site.`;
     case 'silent':
     default:
-      return `${host} did not answer at all — it is not deployed, it is down, or this network cannot reach it.`;
+      return (
+        `${host} did not answer at all, though this device's connection is working — so it is ` +
+        'the endpoint: not deployed, down, or something between here and it dropping the request. ' +
+        'Opening its URL in a browser tab settles which.'
+      );
   }
 }

@@ -253,7 +253,7 @@ const chatUrl = () =>
  * endpoints never answer. The browser logs the real reason to the console and
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
-async function describeNetworkFailure(signal?: AbortSignal): Promise<string> {
+async function describeNetworkFailure(): Promise<string> {
   if (!endpoint) return NO_ENDPOINT;
   let host = endpoint;
   try {
@@ -265,7 +265,7 @@ async function describeNetworkFailure(signal?: AbortSignal): Promise<string> {
   // One public GET, asked twice, decides between them.
   return [
     `The request never left the browser.`,
-    describeReach(await reachEndpoint(signal), host),
+    describeReach(await reachEndpoint(), host),
   ].join('\n');
 }
 
@@ -718,10 +718,10 @@ async function callModel(
     // page, in which case the upload itself died and a smaller one may still
     // get through. Anything else (the origin refused, nothing listening, no
     // network) no smaller photo will fix, so it is named rather than retried.
-    if (Array.isArray(content) && (await reachEndpoint(options.signal)).reach === 'open') {
+    if (Array.isArray(content) && (await reachEndpoint()).reach === 'open') {
       throw new TransportError('The photo could not be sent — the upload did not complete.');
     }
-    throw new ReachError(await describeNetworkFailure(options.signal));
+    throw new ReachError(await describeNetworkFailure());
   }
 
   if (!res.ok) {
