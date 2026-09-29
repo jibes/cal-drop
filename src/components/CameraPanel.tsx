@@ -1,14 +1,16 @@
 import type React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   cameraSupported,
   closeCamera,
   defaultRearCamera,
+  forgetLens,
   hasTorch,
   openCamera,
   rearCameras,
   rememberedLens,
   rememberLens,
+  selectableLenses,
   setTorch,
   takeShot,
 } from '../lib/camera';
@@ -42,6 +44,20 @@ const BREATHING_ROOM = 16;
  * opened it successfully before. Safari answers neither question through the
  * Permissions API, which is why the remembered answer matters.
  */
+/**
+ * The same question, answered without waiting — for the one case where the
+ * answer is already written down. It decides what the first render looks
+ * like, so it cannot be a promise: by the time a promise settles the page has
+ * been drawn once, and drawn as a page rather than as a camera.
+ */
+function willAutoStart(): boolean {
+  try {
+    return localStorage.getItem(PREFERENCE) === 'auto';
+  } catch {
+    return false;
+  }
+}
+
 async function shouldAutoStart(): Promise<boolean> {
   try {
     if (localStorage.getItem(PREFERENCE) === 'auto') return true;
@@ -72,6 +88,15 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState(false);
+  /**
+   * The camera is on its way up. This is what stops the app showing itself as
+   * an ordinary page first: opening a camera takes anything from a moment to
+   * a second, and for all of it the screen used to be the in-page layout,
+   * small framed viewfinder and all, which then jumped to full screen. Where
+   * it is already known the camera will open — a visitor who has granted it
+   * before — this starts true, so the very first paint is the camera.
+   */
+  const [opening, setOpening] = useState(() => willAutoStart() && results === 0);
   /** The first frame has been drawn. Until then the video stays invisible:
    *  what the browser paints in its place is its own placeholder, a grey play
    *  button on Android, which is not the camera and should not be seen. */
@@ -103,6 +128,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
     closeCamera(streamRef.current);
     streamRef.current = null;
     setLive(false);
+    setOpening(false);
     setShowing(false);
     setTorchOn(false);
   }, []);
@@ -122,22 +148,33 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
    * opening, failed with "could not start video source" and took the picture
    * down with it.
    */
-  const opening = useRef(false);
+  const busyOpening = useRef(false);
 
   const start = useCallback(async (wanted = rememberedLens()) => {
-    if (streamRef.current || opening.current) return;
-    opening.current = true;
+    if (streamRef.current || busyOpening.current) return;
+    busyOpening.current = true;
+    setOpening(true);
     setError('');
     try {
       let stream = await openCamera(wanted);
 
       // Labels are unreadable until permission exists, so which lens this
       // should be can only be worked out once something is already open.
-      const rear = await rearCameras();
-      setLenses(rear);
-      if (!wanted) {
+      const usable = selectableLenses(await rearCameras());
+      setLenses(usable);
+
+      /**
+       * An ultra-wide is never the right lens for a poster, and it can be
+       * opened two ways: the system picks it for facingMode, or it is what
+       * was remembered from a switch. The second outlives a reload, so it is
+       * not enough to pass over it — it has to be forgotten, or every visit
+       * reopens the 0.5 view.
+       */
+      const open = stream.getVideoTracks()[0]?.getSettings().deviceId;
+      const unwanted = Boolean(open) && usable.length > 0 && !usable.some((d) => d.deviceId === open);
+      if (unwanted) forgetLens();
+      if (!wanted || unwanted) {
         const preferred = await defaultRearCamera();
-        const open = stream.getVideoTracks()[0]?.getSettings().deviceId;
         if (preferred && preferred !== open) {
           closeCamera(stream);
           stream = await openCamera(preferred);
@@ -157,16 +194,27 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
           ? 'Camera permission was declined.'
           : `The camera could not be opened: ${problem.message}`,
       );
+      setOpening(false);
     } finally {
-      opening.current = false;
+      busyOpening.current = false;
     }
   }, []);
 
-  // The page lays itself out around the answer to this.
-  useEffect(() => {
-    onLive?.(live);
+  /**
+   * The page lays itself out around the answer to this, so it has to have the
+   * answer before anything is drawn.
+   *
+   * As an ordinary effect this ran after the browser had already painted, and
+   * that paint was the panel at its in-page size inside a page that did not
+   * yet know the camera was open — the small framed viewfinder, shown for a
+   * frame or for as long as the first video frame took to arrive, before the
+   * layout jumped to full screen. A layout effect is flushed before the paint,
+   * so the first thing drawn is the full-screen camera.
+   */
+  useLayoutEffect(() => {
+    onLive?.(live || opening);
     return () => onLive?.(false);
-  }, [live, onLive]);
+  }, [live, opening, onLive]);
 
   /**
    * How tall the viewfinder may be, measured rather than guessed.
@@ -348,6 +396,25 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
   // The picture is only ever shown live, and live means full screen. A camera
   // that would not open says why under the button that tries again, rather
   // than as an empty frame in the middle of the page.
+  /**
+   * Coming up. The screen is already the camera's — black, with the shutter
+   * there but not yet usable — so nothing moves when the picture arrives.
+   */
+  if (opening && !live && !dismissed && !standDown) {
+    return (
+      <div className="camera">
+        <div className="stage" ref={stageRef} style={{ '--ar': ratio } as React.CSSProperties}>
+          {error && <p className="stage-error">{error}</p>}
+        </div>
+        <div className="shutter-row">
+          <button className="shutter" disabled aria-label="The camera is opening">
+            <span />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (dismissed || standDown || !live) {
     return (
       <div className="camera off">
