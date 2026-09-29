@@ -13,6 +13,7 @@ Rules:
 - Times may be written as "20 Uhr", "8pm", "20:00", "Einlass 19:00 / Beginn 20:00". Use the start of the event itself, and mention a doors time in the description.
 - If only a date and no time is given, set all_day true.
 - A source may list several events (a festival programme, a series). Return each as its own object.
+- When several events each name their own place, every event keeps the place printed with its own date. Never carry one event's venue over to the next.
 - For a recurring event ("every Tuesday", "jeden ersten Freitag im Monat") set rrule to an RFC 5545 recurrence rule body and set start_date to the first occurrence.
 - Set timezone to the IANA zone of the venue when the place is clear enough to know it (Berlin venue -> Europe/Berlin). Leave it empty if you are guessing.
 - source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it, and keep it to the sentence the date was in.
@@ -36,8 +37,9 @@ Rules:
 const JSON_SHAPE = `Answer with JSON and nothing else — no prose before or after it, no markdown fence.
 
 The JSON is one object: {"events": [ ... ]}, one entry per event, an empty array if there is none. Each entry has:
-- title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1) — always present
+- title (string), start_date ("YYYY-MM-DD"), all_day (boolean), source_text (string), confidence (number 0-1)
 - start_time, end_date, end_time, location, timezone, rrule, description, url, notes — strings, "" when unknown
+- every field is always present: write "" rather than leaving one out, and fill start_time and location whenever the source gives them
 - description: the event's own particulars, at most two sentences. notes: one short sentence, only if the reading itself was uncertain.
 
 Stop as soon as the closing brace is written.`;
@@ -71,7 +73,27 @@ const EVENT_SCHEMA = {
             description: 'one short sentence about anything uncertain in the reading, or empty',
           },
         },
-        required: ['title', 'start_date', 'all_day', 'source_text', 'confidence'],
+        // Every field, not only the ones that can never be empty. A model
+        // that fills exactly what is required (gemma-4-31b does) otherwise
+        // answers with a title and a date and nothing else: no time, no place,
+        // on every source that reaches it as text. "" is how a field says
+        // "not given".
+        required: [
+          'title',
+          'start_date',
+          'start_time',
+          'end_date',
+          'end_time',
+          'all_day',
+          'location',
+          'timezone',
+          'rrule',
+          'description',
+          'url',
+          'source_text',
+          'confidence',
+          'notes',
+        ],
         additionalProperties: false,
       },
     },
@@ -179,7 +201,8 @@ function rememberRung(shape: Shape, i: number): void {
   }
 }
 
-const CAP_KEY = 'caldrop.outputCap.v1';
+// v2: the list gained 16000 at the front, so v1's indices mean other caps.
+const CAP_KEY = 'caldrop.outputCap.v2';
 
 function rememberedCap(shape: Shape): number {
   try {
@@ -226,6 +249,15 @@ class TransportError extends Error {}
 /** An answer with nothing in it, which may be the room asked for rather than
  *  the shape of the asking. */
 class EmptyAnswer extends RungError {}
+
+/**
+ * The model used the whole allowance before writing a word — thinking, on a
+ * model that reasons before it answers. A twenty-row rehearsal plan did this
+ * at 4000 tokens: every one of them reasoning, the stream ending on "length"
+ * with nothing in it. Less room cannot help and another way of asking hits
+ * the same wall, so neither is tried; the reader is told what happened.
+ */
+class ThoughtTooLong extends Error {}
 
 /** The request could not reach the endpoint at all. Nothing about what was
  *  sent is to blame, so it is reported as found rather than second-guessed. */
@@ -423,8 +455,43 @@ const clip = (value: string | undefined, max: number): string => {
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 };
 
+/**
+ * A clock time in the words the date was read from: "19:30", "19.30",
+ * "20 Uhr", "8pm". Only asked for when the model said the event is not all
+ * day and then gave no time — its own answer says a time was there.
+ */
+function timeIn(text: string): string {
+  const clock = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/.exec(text);
+  if (clock) return `${clock[1].padStart(2, '0')}:${clock[2]}`;
+  const uhr = /\b([01]?\d|2[0-3])\s*Uhr\b/i.exec(text);
+  if (uhr) return `${uhr[1].padStart(2, '0')}:00`;
+  const ampm = /\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*([ap])\.?m\b/i.exec(text);
+  if (ampm) {
+    const hour = (Number(ampm[1]) % 12) + (ampm[3].toLowerCase() === 'p' ? 12 : 0);
+    return `${String(hour).padStart(2, '0')}:${ampm[2] ?? '00'}`;
+  }
+  return '';
+}
+
+/** Words that mean "no note", which a model writes where it was told to leave it empty. */
+const EMPTY_NOTE = /^(none|n\/?a|null|nil|no|-+|—|keine?)\.?$/i;
+
+/**
+ * A note is for doubt about the reading. One that comes with a confidence of
+ * 0.9 or more is the model thinking aloud — "the date matches the weekday",
+ * even "Wait, let me check" — and it painted the card orange and opened the
+ * editor for an event with nothing wrong with it.
+ */
+function noteFor(raw: RawEvent): string {
+  const note = clip(raw.notes, LIMITS.notes);
+  if (EMPTY_NOTE.test(note)) return '';
+  if (typeof raw.confidence === 'number' && raw.confidence >= 0.9) return '';
+  return note;
+}
+
 function toDraft(raw: RawEvent, i: number): EventDraft {
-  const startTime = normalizeTime(raw.start_time);
+  const startTime =
+    normalizeTime(raw.start_time) || (raw.all_day === false ? timeIn(raw.source_text || '') : '');
   const timezone = (raw.timezone || '').trim();
   return {
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
@@ -441,7 +508,7 @@ function toDraft(raw: RawEvent, i: number): EventDraft {
     url: (raw.url || '').trim(),
     sourceText: clip(raw.source_text, LIMITS.sourceText),
     confidence: typeof raw.confidence === 'number' ? Math.max(0, Math.min(1, raw.confidence)) : 0.5,
-    notes: clip(raw.notes, LIMITS.notes),
+    notes: noteFor(raw),
   };
 }
 
@@ -510,8 +577,14 @@ function fromCompletion(raw: string): string {
 
 /** Nothing at all for this long means the answer is not coming. Long enough
  *  that a slow model thinking before its first token is not cut off, short
- *  enough that a spinner does not become the whole experience. */
-const SILENCE_MS = 60000;
+ *  enough that a spinner does not become the whole experience.
+ *
+ *  It was 60 s. The provider queues requests at busy times and says nothing
+ *  until a model is free: measured, 15 s before the first token in two runs
+ *  of five, and past 60 s three times in a row once. Each give-up sent the
+ *  request to the back of the queue again, so a wait of a minute and a bit
+ *  became three minutes. A longer wait lets the queue come round. */
+const SILENCE_MS = 120000;
 
 async function readStream(
   body: ReadableStream<Uint8Array>,
@@ -626,7 +699,7 @@ async function readStream(
  * a day later it is tried from the top again in case the model behind the
  * endpoint has changed.
  */
-const CAPS = [8000, 4000, 2000];
+const CAPS = [16000, 8000, 4000, 2000];
 
 /**
  * How long an answer may run when a cap is safe to send.
@@ -635,9 +708,11 @@ const CAPS = [8000, 4000, 2000];
  * plan or a festival programme is a table of twenty or thirty dates, and each
  * one costs a hundred tokens or so to write down. Cut off mid-list, the JSON
  * does not parse, every rung is tried against the same wall, and the reader
- * is told their endpoint is broken. This is room for around sixty events,
- * which is a long programme — still a ceiling, just not one that a normal
- * document walks into.
+ * is told their endpoint is broken. And the text model reasons before it
+ * answers, which comes out of the same allowance: a rehearsal plan used 4000
+ * tokens thinking and had written nothing. At 16000, half can go on thinking
+ * and there is still room for around sixty events — still a ceiling, just not
+ * one that a normal document walks into.
  */
 const MAX_OUTPUT_TOKENS = CAPS[0];
 
@@ -805,6 +880,13 @@ async function callModel(
   // a server that accepts a parameter then ignores it — neither shows up in
   // the status — so give up one more assumption and try again.
   if (error) throw new RungError(`The model provider rejected the request: ${error}`);
+  // Stopped for length with nothing written: the room went on thinking.
+  if (truncated) {
+    throw new ThoughtTooLong(
+      'The model spent its whole allowance working this out and stopped before writing any events. ' +
+        'A long list needs more room than the endpoint gave it; a shorter excerpt will get through.',
+    );
+  }
   // Chunks arrived and every one of them was empty. That can be the shape of
   // the request — or the room asked for, which is why it has its own name.
   throw new EmptyAnswer(raw.trim() ? describeSilence(raw) : 'The endpoint answered with an empty body.');

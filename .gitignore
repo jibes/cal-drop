@@ -7,3 +7,6 @@ android
 ios
 *.log
 tsconfig.tsbuildinfo
+
+# wrangler's local state from a deploy
+.wrangler

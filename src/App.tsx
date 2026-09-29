@@ -10,6 +10,14 @@ import { firstUrlIn, onShared, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
 import { fetchPageText } from './lib/url';
 
+/** What to try next depends on what was read: a sharper photo is no help with a link. */
+const NOTHING_FOUND: Record<ExtractionSource['kind'], string> = {
+  image: 'No dated event was found in that photo. Try a sharper one, or add a page with the date on it.',
+  pdf: 'No dated event was found in that PDF.',
+  text: 'No dated event was found in that text. It needs a date to go on.',
+  url: 'No dated event was found on that page. If the event has its own page, try that link.',
+};
+
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
@@ -33,8 +41,9 @@ export default function App() {
    * The photos behind the last result, and what they produced. One event can
    * need more than one picture — the back of a flyer, a poster too tall for a
    * frame — and that is only known once the first has been read. So a page is
-   * added to a result, not decided on before the first photo: the next photo
-   * is read together with these, and its answer replaces theirs.
+   * offered where it is needed: on "no dated event was found", the one answer
+   * that says the photo was not enough. The next photo is then read together
+   * with these.
    */
   const [pages, setPages] = useState<{ images: string[]; ids: string[] } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -46,6 +55,11 @@ export default function App() {
   const addingRef = useRef(adding);
   addingRef.current = adding;
   const abortRef = useRef<AbortController | null>(null);
+  /** Set the moment a read starts, not on the next render: two shares can
+   *  arrive before React has drawn the first one's progress. */
+  const readingRef = useRef(false);
+  /** Shares that arrived while something was being read, oldest first. */
+  const waitingRef = useRef<{ files: File[]; text: string; url: string }[]>([]);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -57,26 +71,27 @@ export default function App() {
     build: () => Promise<ExtractionSource>,
     stage: string,
     replace: string[] = [],
+    /** What the second step says; it starts with "Sending", which the progress steps read. */
+    sending = 'Sending it to the model…',
   ): Promise<EventDraft[] | null> => {
     const current = settingsRef.current;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    readingRef.current = true;
     setError('');
     setOfferPage(false);
     setGlimpse('');
     setBusy(stage);
     try {
       const source = await build();
-      setBusy('Sending it to the model…');
+      setBusy(sending);
       const found = await extractEvents(source, current, {
         signal: controller.signal,
         onProgress: ({ title, date }) => setGlimpse([title, date].filter(Boolean).join(' — ')),
         onNote: setHint,
       });
-      if (found.length === 0) {
-        setError('No dated event was found in that. Try a sharper photo, or paste the text.');
-      }
+      if (found.length === 0) setError(NOTHING_FOUND[source.kind]);
       setEvents((prev) =>
         found.length > 0 ? [...found, ...prev.filter((e) => !replace.includes(e.id))] : prev,
       );
@@ -89,8 +104,12 @@ export default function App() {
       setError(message);
       return null;
     } finally {
-      setBusy('');
-      setGlimpse('');
+      // A read replaced by a newer one leaves the newer one's state alone.
+      if (abortRef.current === controller) {
+        readingRef.current = false;
+        setBusy('');
+        setGlimpse('');
+      }
     }
   }, []);
 
@@ -115,6 +134,10 @@ export default function App() {
         },
         base ? `Reading page ${base.images.length + 1} with the rest…` : stage,
         base?.ids ?? [],
+        // Said all the way through, not only for the moment before sending.
+        base
+          ? `Sending page ${base.images.length + 1} with the ${base.images.length === 1 ? 'first' : `other ${base.images.length}`}…`
+          : undefined,
       );
       if (!found || all.length === 0) return;
       // An added page that found nothing leaves the earlier result standing, so
@@ -211,11 +234,23 @@ export default function App() {
   // selection menu, a bookmarklet or a Shortcut.
   const receive = useCallback(
     (incoming: { files: File[]; text: string; url: string }) => {
+      // Sharing a second poster while the first is being read used to cancel
+      // the first, silently. It waits its turn instead.
+      if (readingRef.current) {
+        waitingRef.current.push(incoming);
+        return;
+      }
       if (incoming.files.length > 0) handleFiles(incoming.files);
       else handleText(incoming.url || incoming.text);
     },
     [handleFiles, handleText],
   );
+
+  // The next waiting share, once the screen is free.
+  useEffect(() => {
+    if (busy || waitingRef.current.length === 0) return;
+    receive(waitingRef.current.shift()!);
+  }, [busy, receive]);
 
   useEffect(() => {
     void takeIncoming().then((incoming) => {
@@ -272,6 +307,9 @@ export default function App() {
         fullScreen={viewfinder}
         onLive={setScanning}
         wantCamera={wantCamera}
+        onNothingToPaste={() =>
+          setHint('Nothing to paste: the clipboard is empty or could not be read. Copy a poster, a link or its text first.')
+        }
       />
 
       {/* Floating, so neither one moves the page — or the camera — around. */}
@@ -311,18 +349,6 @@ export default function App() {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {pages && pages.ids.length > 0 && !busy && events.some((e) => pages.ids.includes(e.id)) && (
-        <div className="pages-bar">
-          <span className="pages-what">
-            <Icon name="camera" />
-            Read from {pages.images.length === 1 ? '1 photo' : `${pages.images.length} photos`}
-          </span>
-          <button className="ghost small" onClick={addPage}>
-            ＋ Add a page
-          </button>
         </div>
       )}
 

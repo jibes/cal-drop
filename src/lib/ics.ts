@@ -133,6 +133,11 @@ function slug(value: string): string {
  * Returns '' when the calendar is too big to travel in a URL, or when there is
  * no endpoint to serve it; callers fall back to downloading it directly.
  */
+/** The file's name, without the extension: the event's, or "events". */
+export function icsName(events: EventDraft[]): string {
+  return events.length === 1 ? slug(events[0].title) : 'events';
+}
+
 export function icsLink(events: EventDraft[]): string {
   if (!endpoint || events.length === 0) return '';
   const bytes = new TextEncoder().encode(buildIcs(events));
@@ -140,12 +145,12 @@ export function icsLink(events: EventDraft[]): string {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   const encoded = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   if (encoded.length > 12000) return '';
-  const name = events.length === 1 ? slug(events[0].title) : 'events';
+  const name = icsName(events);
   return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}&c=${encoded}`;
 }
 
 export function downloadIcs(events: EventDraft[]): void {
-  const name = events.length === 1 ? slug(events[0].title) : 'events';
+  const name = icsName(events);
   const blob = new Blob([buildIcs(events)], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

@@ -1,4 +1,4 @@
-import { addDays, resolvedEnd } from './ics';
+import { buildIcs, icsName, resolvedEnd } from './ics';
 import { zonedToUtc } from './tz';
 import type { EventDraft } from './types';
 
@@ -15,6 +15,8 @@ import type { EventDraft } from './types';
 interface CalendarInsert {
   available(): Promise<{ available: boolean }>;
   insert(event: InsertPayload): Promise<{ opened: boolean }>;
+  /** Absent in shells built before it existed. */
+  openFile?(file: { name: string; content: string }): Promise<{ opened: string }>;
 }
 
 interface InsertPayload {
@@ -69,10 +71,12 @@ export function insertPayload(event: EventDraft): InsertPayload {
     begin: event.allDay
       ? utcMidnight(event.startDate)
       : instant(event.startDate, event.startTime, event.timezone),
-    // All-day ends are exclusive here as they are in an .ics: a one-day event
-    // ends at the start of the next day.
+    // The last day itself, not the midnight after it. A stored all-day event
+    // ends exclusively, but a calendar's "new event" screen reads this extra
+    // as the day it ends on: sent the next midnight, Simple Calendar opened a
+    // one-day event as two days, from the Saturday to the Sunday.
     end: event.allDay
-      ? utcMidnight(addDays(event.endDate || event.startDate, 1))
+      ? utcMidnight(event.endDate || event.startDate)
       : instant(end.date, end.time, event.timezone),
     allDay: event.allDay,
     location: event.location,
@@ -89,6 +93,22 @@ export async function addToCalendarApp(event: EventDraft): Promise<boolean> {
   if (!bridge) return false;
   try {
     return (await bridge.insert(insertPayload(event))).opened === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The calendar file, opened by the app rather than downloaded by a browser.
+ * True when something took it — a calendar, or the share sheet; false where
+ * there is no shell to ask, and the caller hands over the link instead.
+ */
+export async function openCalendarFileInApp(events: EventDraft[]): Promise<boolean> {
+  const open = plugin()?.openFile;
+  if (!open || events.length === 0) return false;
+  try {
+    const { opened } = await open.call(plugin(), { name: icsName(events), content: buildIcs(events) });
+    return Boolean(opened);
   } catch {
     return false;
   }
