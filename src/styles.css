@@ -206,6 +206,53 @@ label:not(.button):not(.checkbox):not(.pick-wrap) {
 }
 label > input, label > textarea, label > .row { margin-top: 4px; }
 
+/* Which way the app talks to a model: two whole answers, not a toggle, so
+   each carries what it means for the person choosing. */
+.method {
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.method legend {
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+label.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+label.choice:has(input:checked) { border-color: var(--accent); }
+label.choice:has(input:disabled) { opacity: 0.55; cursor: default; }
+
+label.choice input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  flex: none;
+}
+
+label.choice span { display: block; min-width: 0; }
+label.choice strong { display: block; font-weight: 600; }
+label.choice em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 label.checkbox {
   display: flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { endpoint } from './settings';
+import { activeEndpoint, usingOwnApi } from './settings';
 
 /**
  * Why a request never left the browser.
@@ -32,7 +32,19 @@ export interface Reached {
   said?: string;
 }
 
-const PUBLIC_GET = () => `${endpoint.replace(/\/+$/, '')}/test-image`;
+const base = () => activeEndpoint().replace(/\/+$/, '');
+
+/**
+ * A GET the endpoint answers without being asked for anything: the shared
+ * one serves a test image, and every OpenAI-compatible API lists its models.
+ * Neither needs a preflight, so a browser will send it where it will not yet
+ * send a POST — which is the whole point of asking.
+ */
+const PUBLIC_GET = () => `${base()}${usingOwnApi() ? '/models' : '/test-image'}`;
+
+/** A POST shaped like the real one, to ask the question a GET cannot: will
+ *  the preflight be answered? Both of these refuse the body; that is fine. */
+const PREFLIGHT_POST = () => `${base()}${usingOwnApi() ? '/chat/completions' : '/pricing'}`;
 
 /**
  * What an error answer says, in one line. A worker's own refusals are short
@@ -47,8 +59,12 @@ async function firstLine(res: Response): Promise<string | undefined> {
     let said = body;
     try {
       const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
-      const found = typeof parsed.error === 'string' ? parsed.error : parsed.message;
-      if (typeof found === 'string' && found.trim()) said = found.trim();
+      // Flat for the shared endpoint, nested for anything that copies OpenAI.
+      for (const found of [parsed.error, parsed.message]) {
+        if (typeof found === 'string' && found.trim()) { said = found.trim(); break; }
+        const inner = found && typeof found === 'object' ? (found as { message?: unknown }).message : null;
+        if (typeof inner === 'string' && inner.trim()) { said = inner.trim(); break; }
+      }
     } catch {
       /* not JSON, so the text itself is the message */
     }
@@ -83,7 +99,7 @@ async function ownNetworkWorks(signal: AbortSignal): Promise<boolean> {
 const PROBE_MS = 8000;
 
 export async function reachEndpoint(): Promise<Reached> {
-  if (!endpoint) return { reach: 'silent' };
+  if (!base()) return { reach: 'silent' };
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return { reach: 'offline' };
 
   /**
@@ -120,7 +136,7 @@ async function ask(signal: AbortSignal): Promise<Reached> {
     // an access code, which the browser will not send until an OPTIONS has
     // been answered — a different question, and the one a tab cannot ask.
     try {
-      await fetch(`${endpoint.replace(/\/+$/, '')}/pricing`, {
+      await fetch(PREFLIGHT_POST(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer preflight-probe' },
         body: '{}',
@@ -176,7 +192,11 @@ export function describeReach(found: Reached, host: string): string {
         'answering OPTIONS itself.'
       );
     case 'closed':
-      return `${host} is answering, but not for ${location.origin}: its ALLOWED_ORIGINS does not list this site.`;
+      return usingOwnApi()
+        ? `${host} is answering, but not for ${location.origin}. It does not allow browsers to ` +
+          'call it directly — which most hosted APIs do not, since a key sent from a page is a ' +
+          'key given away. An endpoint of your own, or the shared one, can call it instead.'
+        : `${host} is answering, but not for ${location.origin}: its ALLOWED_ORIGINS does not list this site.`;
     case 'silent':
     default:
       return (

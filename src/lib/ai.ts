@@ -1,4 +1,4 @@
-import { endpoint } from './settings';
+import { activeEndpoint, authSecret, usingOwnApi, wantedModel } from './settings';
 import { shrinkFurther } from './image';
 import { describeReach, reachEndpoint } from './reach';
 import { isValidZone, localZone } from './tz';
@@ -259,6 +259,31 @@ class EmptyAnswer extends RungError {}
  */
 class ThoughtTooLong extends Error {}
 
+/**
+ * Whatever a server said went wrong, as a sentence.
+ *
+ * The shared endpoint answers {"error": "some words"}. The OpenAI shape, and
+ * so every API that copies it, nests the words: {"error": {"message": ...}}.
+ * Reading only the first produced the literal text "[object Object]" in
+ * place of "Incorrect API key provided" — the one message that would have
+ * said what to do about it.
+ */
+function complaint(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
+    for (const found of [parsed.error, parsed.message]) {
+      if (typeof found === 'string' && found.trim()) return found.trim();
+      if (found && typeof found === 'object') {
+        const inner = (found as { message?: unknown }).message;
+        if (typeof inner === 'string' && inner.trim()) return inner.trim();
+      }
+    }
+  } catch {
+    /* not every error body is JSON */
+  }
+  return '';
+}
+
 /** The request could not reach the endpoint at all. Nothing about what was
  *  sent is to blame, so it is reported as found rather than second-guessed. */
 class ReachError extends Error {}
@@ -271,12 +296,16 @@ export interface ExtractOptions {
   onNote?: (note: string) => void;
 }
 
-const NO_ENDPOINT =
-  'This build has no endpoint configured, so there is nothing for it to call. ' +
-  'VITE_PROXY_URL was empty when it was built.';
+const NO_ENDPOINT = usingOwnApi()
+  ? 'No API address is set. Settings has a place for the base URL of an ' +
+    'OpenAI-compatible API — the part ending in /v1 — along with your key.'
+  : 'This build has no endpoint configured, so there is nothing for it to call. ' +
+    'VITE_PROXY_URL was empty when it was built.';
 
-const chatUrl = () =>
-  endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
+const chatUrl = () => {
+  const base = activeEndpoint();
+  return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
+};
 
 /**
  * fetch() rejects with a bare "Failed to fetch" for every network-level
@@ -286,8 +315,8 @@ const chatUrl = () =>
  * refuses to expose it to script, so spell out the likely cause and the fix.
  */
 async function describeNetworkFailure(cause: Error, bytes: number): Promise<string> {
-  if (!endpoint) return NO_ENDPOINT;
-  let host = endpoint;
+  if (!activeEndpoint()) return NO_ENDPOINT;
+  let host = activeEndpoint();
   try {
     host = new URL(chatUrl()).host;
   } catch {
@@ -726,8 +755,15 @@ export function requestBody(
   cap = MAX_OUTPUT_TOKENS,
 ) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
+  const model = wantedModel();
   return {
-    // No model: the endpoint decides which one answers.
+    /**
+     * A model is named only where naming one is the caller's job. The shared
+     * endpoint chooses — that is half of what it is for, and sending a name
+     * would override a choice made by whoever pays for it. Somebody's own API
+     * has no such opinion and will refuse a request that does not say.
+     */
+    ...(model ? { model } : {}),
     //
     // A cap, except on a picture. It was the only parameter the request gained
     // between photos working and photos coming back empty, from a provider
@@ -793,9 +829,18 @@ async function callModel(
   stream = true,
   cap = MAX_OUTPUT_TOKENS,
 ): Promise<{ text: string; broken: boolean; truncated: boolean }> {
-  if (!endpoint) throw new Error(NO_ENDPOINT);
+  if (!activeEndpoint()) throw new Error(NO_ENDPOINT);
+  /**
+   * Asked before anything is sent, because the answer does not change with
+   * the asking. An API of one's own refuses every request that names no
+   * model, and the ladder would take that for four different rungs failing
+   * and try all of them — four refusals saying the same thing.
+   */
+  if (usingOwnApi() && !wantedModel()) {
+    throw new Error('No model is named. Settings needs the model your API should answer with.');
+  }
 
-  const code = settings.accessCode.trim();
+  const code = authSecret(settings);
 
   /**
    * Built before the request rather than inside it. This used to sit in the
@@ -841,11 +886,7 @@ async function callModel(
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 400);
     let message = '';
-    try {
-      message = (JSON.parse(detail) as { error?: string }).error || '';
-    } catch {
-      /* not every error body is JSON */
-    }
+    message = complaint(detail);
     if (res.status === 401 || res.status === 403) {
       throw new Error(message || 'Wrong or missing access code. Enter it in Settings.');
     }

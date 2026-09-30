@@ -1,4 +1,4 @@
-import { endpoint } from './settings';
+import { proxyEndpoint } from './settings';
 import { zonedToUtc } from './tz';
 import type { EventDraft } from './types';
 
@@ -143,7 +143,10 @@ export function icsName(events: EventDraft[]): string {
  *   one to hand straight to a calendar. Same calendar, same route.
  */
 export function icsLink(events: EventDraft[], download = false): string {
-  if (!endpoint || events.length === 0) return '';
+  // Only the shared endpoint serves these. With an API of one's own there is
+  // no https link to hand the phone, and the caller downloads the file.
+  const server = proxyEndpoint();
+  if (!server || events.length === 0) return '';
   const bytes = new TextEncoder().encode(buildIcs(events));
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -151,7 +154,7 @@ export function icsLink(events: EventDraft[], download = false): string {
   if (encoded.length > 12000) return '';
   const name = icsName(events);
   const dl = download ? '&dl=1' : '';
-  return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}${dl}&c=${encoded}`;
+  return `${server.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}${dl}&c=${encoded}`;
 }
 
 export function downloadIcs(events: EventDraft[]): void {

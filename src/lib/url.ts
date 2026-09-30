@@ -1,5 +1,5 @@
 import { describeReach, reachEndpoint } from './reach';
-import { endpoint } from './settings';
+import { authSecret, proxyEndpoint, usingOwnApi } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -9,16 +9,31 @@ import type { Settings } from './types';
  */
 export async function fetchPageText(url: string, settings: Settings): Promise<string> {
   const target = url.trim();
-  if (!endpoint) throw new Error('This build has no endpoint configured, so links cannot be read.');
+  const reader = proxyEndpoint();
+  /**
+   * Reading a page is not something an OpenAI-compatible API does. The
+   * browser cannot do it either — it may not fetch other origins — so with
+   * an API of one's own there is nobody to ask, and saying so beats calling
+   * a route that was never going to be there.
+   */
+  if (!reader) {
+    throw new Error(
+      usingOwnApi()
+        ? 'Links are read by the shared endpoint, and this app is set to call your own API ' +
+          'directly, which has no such thing. Paste the text, or take a screenshot of the page.'
+        : 'This build has no endpoint configured, so links cannot be read.',
+    );
+  }
   if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
+  const code = authSecret(settings);
   let res: Response;
   try {
-    res = await fetch(`${endpoint}/fetch`, {
+    res = await fetch(`${reader}/fetch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(settings.accessCode.trim() ? { Authorization: `Bearer ${settings.accessCode.trim()}` } : {}),
+        ...(code ? { Authorization: `Bearer ${code}` } : {}),
       },
       body: JSON.stringify({ url: target }),
     });
@@ -26,9 +41,9 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
     if ((err as Error).name === 'AbortError') throw err;
     // Same bare rejection as everywhere else, and the same way of telling the
     // three causes apart rather than listing them.
-    let host = endpoint;
+    let host = reader;
     try {
-      host = new URL(endpoint).host;
+      host = new URL(reader).host;
     } catch {
       /* an unconfigured endpoint is its own answer */
     }

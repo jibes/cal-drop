@@ -28,8 +28,25 @@ export interface EventDraft {
  * pays are decisions the deployment makes once, not choices to put in front of
  * someone holding a poster.
  */
+/**
+ * Where the model is reached.
+ *
+ *   'proxy'  through the endpoint this build was given, which holds the API
+ *            key and decides the model; an access code says who may use it
+ *   'direct' straight to an OpenAI-compatible API of your own, with your own
+ *            key and your own choice of model
+ */
+export type Method = 'proxy' | 'direct';
+
 export interface Settings {
+  method: Method;
+  /** For 'proxy': what the shared endpoint asks for. */
   accessCode: string;
+  /** For 'direct': the base URL, as in https://api.example.com/v1 */
+  apiBase: string;
+  apiKey: string;
+  /** For 'direct': nothing else knows which model to ask for. */
+  model: string;
 }
 
 export type SourceKind = 'image' | 'pdf' | 'text' | 'url';

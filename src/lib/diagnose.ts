@@ -1,6 +1,6 @@
 import { requestBody, type ContentPart } from './ai';
 import { describeReach, reachEndpoint } from './reach';
-import { endpoint } from './settings';
+import { activeEndpoint, authSecret, proxyEndpoint, proxyUrl, usingOwnApi } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -12,7 +12,7 @@ import type { Settings } from './types';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mO4Y2OEFTEMLQkAZyhSgVTvwmkAAAAASUVORK5CYII=';
 const DATA_URL = `data:image/png;base64,${PNG_B64}`;
-const HOSTED = endpoint.replace(/\/+$/, '') + '/test-image';
+const HOSTED = proxyUrl ? proxyUrl.replace(/\/+$/, '') + '/test-image' : '';
 
 const ASK = 'Reply with the single word OK.';
 const LOOK = 'What colour is this image? One word.';
@@ -177,7 +177,9 @@ const PROBES: Probe[] = [
 ];
 
 const chatUrl = () =>
-  endpoint.endsWith('/chat/completions') ? endpoint : `${endpoint}/chat/completions`;
+  activeEndpoint().endsWith('/chat/completions')
+    ? activeEndpoint()
+    : `${activeEndpoint()}/chat/completions`;
 
 /** Anything an endpoint says about a failure, from wherever it chose to say it. */
 function readOutcome(status: number, raw: string): string {
@@ -323,7 +325,10 @@ const plainCount = (n: number) => n.toLocaleString('en-US', { useGrouping: false
  * particular is guesswork — pan-and-scan means one photo can be several crops.
  */
 async function measureCost(emit: (line: string) => void, auth: Record<string, string>): Promise<void> {
-  const base = endpoint.replace(/\/+$/, '');
+  // Prices are something the shared endpoint is configured with; an API of
+  // one's own bills directly and says nothing here.
+  const base = proxyEndpoint().replace(/\/+$/, '');
+  if (!base) return;
 
   let prices: {
     model?: string;
@@ -404,8 +409,10 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   const lines: string[] = [
     `CalDrop endpoint report — ${new Date().toISOString()}`,
     `build    ${__BUILD__} UTC`,
-    `endpoint ${endpoint || '(none configured)'}`,
-    `code     ${settings.accessCode.trim() ? 'set' : 'not set'}`,
+    `method   ${usingOwnApi(settings) ? 'your own OpenAI-compatible API' : 'the shared endpoint'}`,
+    `endpoint ${activeEndpoint(settings) || '(none configured)'}`,
+    `model    ${usingOwnApi(settings) ? settings.model.trim() || '(none named)' : '(chosen by the endpoint)'}`,
+    `${usingOwnApi(settings) ? 'key     ' : 'code    '} ${authSecret(settings) ? 'set' : 'not set'}`,
     '',
   ];
   const emit = (line: string) => {
@@ -413,8 +420,12 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     onLine(lines.join('\n'));
   };
 
-  if (!endpoint) {
-    emit('No endpoint is configured in this build, so there is nothing to test.');
+  if (!activeEndpoint(settings)) {
+    emit(
+      usingOwnApi(settings)
+        ? 'No API address is set, so there is nothing to test.'
+        : 'No endpoint is configured in this build, so there is nothing to test.',
+    );
     return lines.join('\n');
   }
 
@@ -422,9 +433,9 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   // site? Every probe below fails the same unreadable way if it does not, and
   // this is one public GET that needs no access code and no preflight.
   {
-    let host = endpoint;
+    let host = activeEndpoint(settings);
     try {
-      host = new URL(endpoint).host;
+      host = new URL(host).host;
     } catch {
       /* the endpoint's own text will do */
     }
@@ -438,7 +449,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     emit('');
   }
 
-  const code = settings.accessCode.trim();
+  const code = authSecret(settings);
   const auth: Record<string, string> = code ? { Authorization: `Bearer ${code}` } : {};
   let models: string[] = [];
   let imageWorks = false;
@@ -446,7 +457,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   // Which models exist is the question a failed image probe leads to, so
   // answer it in the same report rather than in a second round trip.
   try {
-    const res = await fetch(`${endpoint.replace(/\/+$/, '')}/models`, { headers: auth });
+    const res = await fetch(`${activeEndpoint(settings).replace(/\/+$/, '')}/models`, { headers: auth });
     const body = (await res.json()) as { data?: { id?: string }[] };
     models = (body.data ?? []).map((m) => m.id).filter((id): id is string => Boolean(id));
     emit(models.length ? `models   ${models.join(', ')}` : `models   (none listed, HTTP ${res.status})`);
@@ -454,13 +465,21 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     emit(`models   could not be listed: ${(err as Error).message}`);
   }
   emit('');
+  /**
+   * The shared endpoint names the model itself; an API of one's own has to be
+   * told, and refuses anything that does not. And the probe that hands the
+   * model an https image needs an image at a public address — the shared
+   * endpoint serves one, so it is only asked where that exists.
+   */
+  const named = usingOwnApi(settings) ? { model: settings.model.trim() } : {};
   for (const probe of PROBES) {
+    if (probe.name.endsWith('{url: https:}') && !HOSTED) continue;
     let outcome: string;
     try {
       const res = await fetch(chatUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify(probe.body),
+        body: JSON.stringify({ ...named, ...probe.body }),
       });
       outcome = readOutcome(res.status, await res.text());
     } catch (err) {
@@ -477,13 +496,16 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   // Knowing that pictures are refused is only half an answer; the other half
   // is which of this provider's models would accept one.
-  if (!imageWorks) {
+  if (!imageWorks && !proxyEndpoint(settings)) {
+    emit('');
+    emit('Images were refused. Name a model that accepts them in Settings.');
+  } else if (!imageWorks) {
     emit('');
     emit('Images were refused, so trying the models most likely to accept one:');
     for (const model of visionCandidates(models)) {
       let outcome: string;
       try {
-        const res = await fetch(`${endpoint.replace(/\/+$/, '')}/probe`, {
+        const res = await fetch(`${proxyEndpoint(settings).replace(/\/+$/, '')}/probe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...auth },
           body: JSON.stringify({
