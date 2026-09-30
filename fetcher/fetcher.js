@@ -59,8 +59,9 @@ export default {
         503,
         {
           error:
-            'This fetcher has no access code set, so it is not serving anyone. Its operator must ' +
-            'set the ACCESS_CODE secret (or ALLOW_NO_CODE="yes" to run it open on purpose).',
+            'This fetcher has no access code set, so it is not serving anyone. Its operator sets ' +
+            'one as the repository secret FETCHER_ACCESS_CODE, which the deploy workflow uploads ' +
+            'as this worker\'s ACCESS_CODE — or ALLOW_NO_CODE="yes" to run it open on purpose.',
         },
         headers,
       );

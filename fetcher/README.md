@@ -28,8 +28,17 @@ this refuses to serve at all until one is set — or until `ALLOW_NO_CODE` says
 ## Deploying
 
 The *Deploy fetcher* workflow needs `CLOUDFLARE_API_TOKEN`,
-`CLOUDFLARE_ACCOUNT_ID`, and the `FETCHER_ACCESS_CODE` secret that becomes
-its `ACCESS_CODE`.
+`CLOUDFLARE_ACCOUNT_ID`, and `FETCHER_ACCESS_CODE`.
+
+That last one wears two names, in two places. You set **`FETCHER_ACCESS_CODE`**
+as a repository secret on GitHub; the workflow uploads it to Cloudflare as
+this worker's **`ACCESS_CODE`**, which is the name the code reads. They differ
+because repository secrets are one flat namespace across every workflow, and
+`ACCESS_CODE` there already belongs to the endpoint — sharing it would mean
+sharing the code.
+
+Setting the secret is not enough on its own: a secret changes nothing about a
+worker that is already deployed, so re-run the workflow afterwards.
 
 ## Its one route
 

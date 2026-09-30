@@ -12,5 +12,10 @@ ALLOWED_ORIGINS = "https://jibes.github.io,https://localhost,capacitor://localho
 # is otherwise read a megabyte at a time to find no text in it.
 MAX_PAGE_BYTES = "1048576"
 
-# Set ACCESS_CODE as a Worker *secret*, not here. Without one this refuses to
-# serve at all, unless ALLOW_NO_CODE is "yes".
+# The access code is a Worker *secret*, never a var, so it is not here. Two
+# names for the one thing, because they live in different places: you set the
+# repository secret FETCHER_ACCESS_CODE, and the deploy workflow uploads it to
+# Cloudflare as this worker's ACCESS_CODE. The repository already spends the
+# name ACCESS_CODE on the endpoint, which is why this one is spelled out.
+#
+# Without it this refuses to serve at all, unless ALLOW_NO_CODE is "yes".
