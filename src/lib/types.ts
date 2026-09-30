@@ -38,6 +38,15 @@ export interface EventDraft {
  */
 export type Method = 'proxy' | 'direct';
 
+/**
+ * Who reads a link, with an API of one's own. A browser may not fetch another
+ * site and an OpenAI-compatible API has no route that does, so it takes a
+ * service: none at all, Jina Reader (which sees the link), or a server of
+ * one's own (fetcher/). Inside the app the device reads the page first, and
+ * this is only the fallback.
+ */
+export type LinkReader = 'off' | 'jina' | 'server';
+
 export interface Settings {
   method: Method;
   /** For 'proxy': what the shared endpoint asks for. */
@@ -59,6 +68,10 @@ export interface Settings {
    */
   pageReader: string;
   pageReaderCode: string;
+  /** For 'direct': which of the above reads a link; see LinkReader. */
+  linkReader: LinkReader;
+  /** Optional: Jina's free tier is rate limited, a key lifts it. */
+  jinaKey: string;
 }
 
 export type SourceKind = 'image' | 'pdf' | 'text' | 'url';

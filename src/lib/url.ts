@@ -38,25 +38,20 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
       refused = err as Error;
     }
     // Nothing came of it and there is nobody else to ask.
-    if (!reader.url) throw refused;
+    if (reader.kind === 'none') throw refused;
   }
 
-  /**
-   * Otherwise it takes a server, and the shared endpoint is the only one this
-   * app has. An OpenAI-compatible API has no such route, and a browser may
-   * not fetch other origins, so with an API of one's own there is nobody to
-   * ask — which is worth saying rather than calling a URL that was never
-   * going to be there.
-   */
-  if (!reader.url) {
+  if (reader.kind === 'none') {
     throw new Error(
       usingOwnApi()
-        ? 'Nothing here can read a link. An OpenAI-compatible API has no such route and a browser ' +
-          'may not fetch other sites, so it takes something that will: put one in Settings under ' +
-          '"Link reader" — see fetcher/ in this project — or paste the text, or take a screenshot.'
+        ? 'Links are not read here: a browser may not fetch another site, and nothing is set up ' +
+          'to do it instead. Paste the page\'s text or take a screenshot — or choose a link reader ' +
+          'in Settings.'
         : 'This build has no endpoint configured, so links cannot be read.',
     );
   }
+
+  if (reader.kind === 'jina') return readWithJina(target, reader.key);
 
   const code = reader.code;
   let res: Response;
@@ -86,4 +81,48 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
   if (!res.ok) throw new Error(data.error || `Could not read that page (HTTP ${res.status}).`);
   if (!data.text?.trim()) throw new Error('That page had no readable text. Try a screenshot instead.');
   return data.text;
+}
+
+/** More than any event page needs; the request to the model is cut at 60 000 anyway. */
+const MAX_TEXT = 200_000;
+
+/**
+ * Jina Reader: a public service that fetches a page and hands back its text,
+ * and — unlike a site itself — lets a browser ask. It sees the link, which
+ * is why it is only used when chosen. Without a key it is free and rate
+ * limited; a key from jina.ai lifts the limit.
+ */
+async function readWithJina(url: string, key: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        Accept: 'text/plain',
+        // The words are what the model needs; image links are only noise.
+        'X-Retain-Images': 'none',
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+    });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    throw new Error('Jina Reader could not be reached. Check the connection, or paste the text instead.');
+  }
+  const text = await res.text().catch(() => '');
+  if (res.status === 429) {
+    throw new Error(
+      key
+        ? 'Jina Reader says this key has used up its limit for now. Try again shortly, or paste the text.'
+        : 'Jina Reader’s free limit is used up for now. Try again shortly, add a Jina key in Settings, or paste the text.',
+    );
+  }
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('Jina Reader refused the key in Settings. Check it, or clear it to use the free tier.');
+  }
+  if (!res.ok) throw new Error(`Jina Reader could not read that page (HTTP ${res.status}).`);
+  // Jina answers 200 for a page that was not there and says so in a line of
+  // its own; the error page is no event, so it goes no further.
+  const upstream = /^Warning: Target URL returned error (\d{3})/m.exec(text.split('Markdown Content:')[0]);
+  if (upstream) throw new Error(`That page answered ${upstream[1]}. Check the link, or paste the text instead.`);
+  if (!text.trim()) throw new Error('That page had no readable text. Try a screenshot instead.');
+  return text.slice(0, MAX_TEXT);
 }

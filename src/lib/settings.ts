@@ -1,4 +1,4 @@
-import type { Settings } from './types';
+import type { LinkReader, Settings } from './types';
 
 const KEY = 'caldrop.settings.v1';
 
@@ -29,6 +29,9 @@ export const defaultSettings: Settings = {
   visionModel: DEFAULT_VISION_MODEL,
   pageReader: '',
   pageReaderCode: '',
+  // Off until someone chooses a service that will see their links.
+  linkReader: 'off',
+  jinaKey: '',
 };
 
 /**
@@ -63,6 +66,14 @@ export function loadSettings(): Settings {
       visionModel: stored.visionModel === undefined ? DEFAULT_VISION_MODEL : clean(stored.visionModel),
       pageReader: clean(stored.pageReader).replace(/\/+$/, ''),
       pageReaderCode: clean(stored.pageReaderCode),
+      // Settings from before the choice existed: a reader address means
+      // that server was the choice.
+      linkReader: (['off', 'jina', 'server'] as LinkReader[]).includes(stored.linkReader as LinkReader)
+        ? (stored.linkReader as LinkReader)
+        : clean(stored.pageReader)
+          ? 'server'
+          : 'off',
+      jinaKey: clean(stored.jinaKey),
     };
     return (inForce = settings);
   } catch {
@@ -78,6 +89,8 @@ const empty = (s: Settings): boolean =>
   !s.apiKey.trim() &&
   !s.pageReader.trim() &&
   !s.pageReaderCode.trim() &&
+  s.linkReader === 'off' &&
+  !s.jinaKey.trim() &&
   s.model.trim() === DEFAULT_MODEL &&
   s.visionModel.trim() === DEFAULT_VISION_MODEL;
 
@@ -91,6 +104,8 @@ export function saveSettings(s: Settings): void {
     visionModel: s.visionModel.trim(),
     pageReader: s.pageReader.trim().replace(/\/+$/, ''),
     pageReaderCode: s.pageReaderCode.trim(),
+    linkReader: s.linkReader,
+    jinaKey: s.jinaKey.trim(),
   };
   inForce = settings;
   try {
@@ -155,15 +170,28 @@ export const wantedModel = (forImage = false, s: Settings = inForce): string => 
 };
 
 /**
- * Where a link is read, and what to present when asking. A reader of one's
- * own comes first: it is the only one that exists in every arrangement,
- * whereas the shared endpoint is only there when the shared endpoint is.
+ * Who reads a link when the device cannot, and what to present when asking.
+ *
+ * With the shared endpoint it reads links itself, as it always has — unless a
+ * server of one's own was given, which is the only reader that exists in
+ * every arrangement. With an API of one's own it is whatever was chosen, and
+ * by default nobody: a link is a thing a service gets to see.
  */
-export function pageReader(s: Settings = inForce): { url: string; code: string } {
-  const own = s.pageReader.trim().replace(/\/+$/, '');
-  if (own) return { url: own, code: s.pageReaderCode.trim() };
+export type PageReader =
+  | { kind: 'none' }
+  | { kind: 'jina'; key: string }
+  | { kind: 'server'; url: string; code: string };
+
+export function pageReader(s: Settings = inForce): PageReader {
+  const server = s.pageReader.trim().replace(/\/+$/, '');
+  if (usingOwnApi(s)) {
+    if (s.linkReader === 'jina') return { kind: 'jina', key: s.jinaKey.trim() };
+    if (s.linkReader === 'server' && server) return { kind: 'server', url: server, code: s.pageReaderCode.trim() };
+    return { kind: 'none' };
+  }
+  if (server) return { kind: 'server', url: server, code: s.pageReaderCode.trim() };
   const shared = proxyEndpoint(s);
-  return shared ? { url: shared, code: authSecret(s) } : { url: '', code: '' };
+  return shared ? { kind: 'server', url: shared, code: authSecret(s) } : { kind: 'none' };
 }
 
 /** Host shown in Settings, so what the app talks to is never a guess. */

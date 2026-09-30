@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { diagnose } from '../lib/diagnose';
 import { inNativeApp } from '../lib/native';
 import { endpointHost, proxyUrl, resetSettings } from '../lib/settings';
-import type { Method, Settings } from '../lib/types';
+import type { LinkReader, Method, Settings } from '../lib/types';
 
 interface Props {
   settings: Settings;
@@ -19,6 +19,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [visionModel, setVisionModel] = useState(settings.visionModel);
   const [pageReader, setPageReader] = useState(settings.pageReader);
   const [pageReaderCode, setPageReaderCode] = useState(settings.pageReaderCode);
+  const [linkReader, setLinkReader] = useState<LinkReader>(settings.linkReader);
+  const [jinaKey, setJinaKey] = useState(settings.jinaKey);
   const [show, setShow] = useState(false);
   const [report, setReport] = useState('');
   const [testing, setTesting] = useState(false);
@@ -35,6 +37,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
     visionModel,
     pageReader,
     pageReaderCode,
+    linkReader,
+    jinaKey,
   });
 
   const runTest = async () => {
@@ -126,36 +130,83 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
               same model reads both — many read only one.
             </p>
 
-            <label>
-              Link reader
-              <input
-                type="url"
-                value={pageReader}
-                onChange={(e) => setPageReader(e.target.value)}
-                placeholder="https://…workers.dev"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              Link reader code
-              <input
-                type="password"
-                value={pageReaderCode}
-                onChange={(e) => setPageReaderCode(e.target.value)}
-                placeholder="its access code"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-            <p className="hint">
-              Optional, and only for links. A browser may not fetch another site and an
-              OpenAI-compatible API has no route that does, so reading a link takes something
-              that will — see <code>fetcher/</code> in this project. Photos, text and PDFs need
-              none of this.
-            </p>
+            <fieldset className="method">
+              <legend>Links</legend>
+              <label className="choice">
+                <input type="radio" name="links" checked={linkReader === 'off'} onChange={() => setLinkReader('off')} />
+                <span>
+                  <strong>Not read</strong>
+                  <em>
+                    {app
+                      ? 'The app reads a link itself; when a site refuses it, paste the text or take a screenshot.'
+                      : 'A browser may not fetch another site, so links are not read here. Paste the text or take a screenshot.'}
+                  </em>
+                </span>
+              </label>
+              <label className="choice">
+                <input type="radio" name="links" checked={linkReader === 'jina'} onChange={() => setLinkReader('jina')} />
+                <span>
+                  <strong>Jina Reader</strong>
+                  <em>
+                    A public service (jina.ai) fetches the page. It sees every link you paste. Free, with a
+                    rate limit{app ? '; used only when the app cannot read a page itself.' : '.'}
+                  </em>
+                </span>
+              </label>
+              <label className="choice">
+                <input type="radio" name="links" checked={linkReader === 'server'} onChange={() => setLinkReader('server')} />
+                <span>
+                  <strong>My own server</strong>
+                  <em>
+                    A page reader you run yourself — see <code>fetcher/</code> in this project.
+                  </em>
+                </span>
+              </label>
+            </fieldset>
+
+            {linkReader === 'jina' && (
+              <label>
+                Jina key <span className="muted">(optional, lifts the rate limit)</span>
+                <input
+                  type="password"
+                  value={jinaKey}
+                  onChange={(e) => setJinaKey(e.target.value)}
+                  placeholder="jina_…"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+              </label>
+            )}
+
+            {linkReader === 'server' && (
+              <>
+                <label>
+                  Server address
+                  <input
+                    type="url"
+                    value={pageReader}
+                    onChange={(e) => setPageReader(e.target.value)}
+                    placeholder="https://…workers.dev"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  Its access code
+                  <input
+                    type="password"
+                    value={pageReaderCode}
+                    onChange={(e) => setPageReaderCode(e.target.value)}
+                    placeholder="the code it was deployed with"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                </label>
+              </>
+            )}
           </>
         )}
 
@@ -182,17 +233,14 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             app ? (
               <>
                 Your key stays on this device and is sent straight to {endpointHost(edited())}.
-                The app calls it through the system rather than as a web page, so providers that
-                refuse browsers — most hosted ones do — work here, and links are read on the
-                device too.
+                Links are read on the device.
               </>
             ) : (
               <>
                 Your key stays on this device and is sent straight to {endpointHost(edited())} —
                 which means the browser has to be allowed to call it. Most hosted providers do not
-                allow that, precisely because a key sent from a page is a key given away; APIs you
-                run yourself usually can, and so does the Android app. Reading a link needs the
-                shared endpoint and is unavailable here.
+                allow that, precisely because a key sent from a page is a key given away; OpenAI and
+                OpenRouter do, and APIs you run yourself usually can.
               </>
             )
           ) : (
@@ -244,6 +292,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
               setVisionModel(fresh.visionModel);
               setPageReader(fresh.pageReader);
               setPageReaderCode(fresh.pageReaderCode);
+              setLinkReader(fresh.linkReader);
+              setJinaKey(fresh.jinaKey);
             }}
           >
             Clear

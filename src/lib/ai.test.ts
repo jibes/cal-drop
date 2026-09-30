@@ -16,6 +16,8 @@ const own: Settings = {
   visionModel: '',
   pageReader: '',
   pageReaderCode: '',
+  linkReader: 'off',
+  jinaKey: '',
 };
 
 const source: ExtractionSource = {
