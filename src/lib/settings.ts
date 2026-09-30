@@ -8,12 +8,25 @@ export const proxyUrl = ((import.meta.env.VITE_PROXY_URL as string) || '').trim(
 /** Kept for the many places that only ever meant the shared endpoint. */
 export const endpoint = proxyUrl;
 
+/**
+ * What to ask for before anyone has said otherwise.
+ *
+ * These are the two models the shared endpoint is configured with — see
+ * MODEL and VISION_MODEL in worker/wrangler.toml — so pointing the app at the
+ * relay in front of the same provider works without first having to know
+ * what to type. They are a starting point and nothing more: an API of one's
+ * own is somebody else's, and both fields are there to be changed.
+ */
+const DEFAULT_MODEL = 'gemma-4-31b';
+const DEFAULT_VISION_MODEL = 'gemma-3-27b-it';
+
 export const defaultSettings: Settings = {
   method: proxyUrl ? 'proxy' : 'direct',
   accessCode: '',
   apiBase: '',
   apiKey: '',
-  model: '',
+  model: DEFAULT_MODEL,
+  visionModel: DEFAULT_VISION_MODEL,
 };
 
 /**
@@ -42,7 +55,10 @@ export function loadSettings(): Settings {
       accessCode: clean(stored.accessCode) || (legacy ? clean(stored.apiKey) : ''),
       apiBase: clean(stored.apiBase).replace(/\/+$/, ''),
       apiKey: legacy ? '' : clean(stored.apiKey),
-      model: clean(stored.model),
+      // Absent and empty are different answers: a field that was never
+      // stored takes the default, one deliberately cleared stays cleared.
+      model: stored.model === undefined ? DEFAULT_MODEL : clean(stored.model),
+      visionModel: stored.visionModel === undefined ? DEFAULT_VISION_MODEL : clean(stored.visionModel),
     };
     return (inForce = settings);
   } catch {
@@ -51,8 +67,13 @@ export function loadSettings(): Settings {
 }
 
 /** Nothing worth storing at all — so nothing is stored. */
+/** Nothing anyone chose — only what this build starts with. */
 const empty = (s: Settings): boolean =>
-  !s.accessCode.trim() && !s.apiBase.trim() && !s.apiKey.trim() && !s.model.trim();
+  !s.accessCode.trim() &&
+  !s.apiBase.trim() &&
+  !s.apiKey.trim() &&
+  s.model.trim() === DEFAULT_MODEL &&
+  s.visionModel.trim() === DEFAULT_VISION_MODEL;
 
 export function saveSettings(s: Settings): void {
   const settings: Settings = {
@@ -61,6 +82,7 @@ export function saveSettings(s: Settings): void {
     apiBase: s.apiBase.trim().replace(/\/+$/, ''),
     apiKey: s.apiKey.trim(),
     model: s.model.trim(),
+    visionModel: s.visionModel.trim(),
   };
   inForce = settings;
   try {
@@ -108,9 +130,21 @@ export function proxyEndpoint(s: Settings = inForce): string {
 export const authSecret = (s: Settings = inForce): string =>
   (usingOwnApi(s) ? s.apiKey : s.accessCode).trim();
 
-/** Which model to ask for, or '' to let the endpoint decide. */
-export const wantedModel = (s: Settings = inForce): string =>
-  usingOwnApi(s) ? s.model.trim() : '';
+/**
+ * Which model to ask for, or '' to let the endpoint decide.
+ *
+ * Two are needed, because one model rarely does both well and several do only
+ * one at all: the text model reads a pasted programme, and a picture goes to
+ * whichever model accepts pictures. The shared endpoint makes that choice
+ * itself — it is half of what it is for — so it is asked for nothing; with an
+ * API of one's own there is nobody else to decide. Naming only one is a
+ * perfectly good answer where the same model reads both.
+ */
+export const wantedModel = (forImage = false, s: Settings = inForce): string => {
+  if (!usingOwnApi(s)) return '';
+  const vision = s.visionModel.trim();
+  return forImage && vision ? vision : s.model.trim();
+};
 
 /** Host shown in Settings, so what the app talks to is never a guess. */
 export function endpointHost(s: Settings = inForce): string {

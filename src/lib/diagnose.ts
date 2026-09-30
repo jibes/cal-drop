@@ -1,6 +1,6 @@
 import { requestBody, type ContentPart } from './ai';
 import { describeReach, reachEndpoint } from './reach';
-import { activeEndpoint, authSecret, proxyEndpoint, proxyUrl, usingOwnApi } from './settings';
+import { activeEndpoint, authSecret, proxyEndpoint, proxyUrl, usingOwnApi, wantedModel } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -412,6 +412,11 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     `method   ${usingOwnApi(settings) ? 'your own OpenAI-compatible API' : 'the shared endpoint'}`,
     `endpoint ${activeEndpoint(settings) || '(none configured)'}`,
     `model    ${usingOwnApi(settings) ? settings.model.trim() || '(none named)' : '(chosen by the endpoint)'}`,
+    `photos   ${
+      usingOwnApi(settings)
+        ? settings.visionModel.trim() || '(the same model)'
+        : '(chosen by the endpoint)'
+    }`,
     `${usingOwnApi(settings) ? 'key     ' : 'code    '} ${authSecret(settings) ? 'set' : 'not set'}`,
     '',
   ];
@@ -471,9 +476,13 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
    * model an https image needs an image at a public address — the shared
    * endpoint serves one, so it is only asked where that exists.
    */
-  const named = usingOwnApi(settings) ? { model: settings.model.trim() } : {};
+  const forText = usingOwnApi(settings) ? { model: wantedModel(false, settings) } : {};
+  const forImage = usingOwnApi(settings) ? { model: wantedModel(true, settings) } : {};
   for (const probe of PROBES) {
     if (probe.name.endsWith('{url: https:}') && !HOSTED) continue;
+    // A picture is asked of whichever model takes pictures, exactly as the
+    // app would ask it — otherwise the report tests something nobody runs.
+    const named = probe.name.startsWith('image:') ? forImage : forText;
     let outcome: string;
     try {
       const res = await fetch(chatUrl(), {
@@ -498,7 +507,8 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   // is which of this provider's models would accept one.
   if (!imageWorks && !proxyEndpoint(settings)) {
     emit('');
-    emit('Images were refused. Name a model that accepts them in Settings.');
+    emit('Images were refused. Name a model that accepts them under "Model for photos".');
+    if (models.length) emit(`This API lists: ${models.join(', ')}`);
   } else if (!imageWorks) {
     emit('');
     emit('Images were refused, so trying the models most likely to accept one:');

@@ -47,6 +47,11 @@ export interface Settings {
   apiKey: string;
   /** For 'direct': nothing else knows which model to ask for. */
   model: string;
+  /**
+   * For 'direct': the model asked when the request carries a picture, where
+   * that is a different one. Empty means the same model reads both.
+   */
+  visionModel: string;
 }
 
 export type SourceKind = 'image' | 'pdf' | 'text' | 'url';

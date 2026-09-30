@@ -16,6 +16,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [apiBase, setApiBase] = useState(settings.apiBase);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
+  const [visionModel, setVisionModel] = useState(settings.visionModel);
   const [show, setShow] = useState(false);
   const [report, setReport] = useState('');
   const [testing, setTesting] = useState(false);
@@ -23,7 +24,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const own = method === 'direct';
   /** The advice below is a browser's; this app is not always one. */
   const app = inNativeApp();
-  const edited = (): Settings => ({ method, accessCode: code, apiBase, apiKey, model });
+  const edited = (): Settings => ({ method, accessCode: code, apiBase, apiKey, model, visionModel });
 
   const runTest = async () => {
     setTesting(true);
@@ -91,12 +92,28 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="gpt-4o-mini"
+                placeholder="gemma-4-31b"
                 autoComplete="off"
                 autoCapitalize="off"
                 spellCheck={false}
               />
             </label>
+            <label>
+              Model for photos
+              <input
+                type="text"
+                value={visionModel}
+                onChange={(e) => setVisionModel(e.target.value)}
+                placeholder="the same one"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+            </label>
+            <p className="hint">
+              A photo goes to the second one; text and PDFs to the first. Leave it empty if the
+              same model reads both — many read only one.
+            </p>
           </>
         )}
 
@@ -182,6 +199,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
               setApiBase(fresh.apiBase);
               setApiKey(fresh.apiKey);
               setModel(fresh.model);
+              setVisionModel(fresh.visionModel);
             }}
           >
             Clear

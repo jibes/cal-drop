@@ -755,13 +755,16 @@ export function requestBody(
   cap = MAX_OUTPUT_TOKENS,
 ) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
-  const model = wantedModel();
+  const model = wantedModel(carriesImage(content));
   return {
     /**
      * A model is named only where naming one is the caller's job. The shared
      * endpoint chooses — that is half of what it is for, and sending a name
      * would override a choice made by whoever pays for it. Somebody's own API
      * has no such opinion and will refuse a request that does not say.
+     *
+     * Which of the two depends on what is being sent: a picture goes to
+     * whichever model takes pictures, and plenty take none at all.
      */
     ...(model ? { model } : {}),
     //
@@ -836,8 +839,12 @@ async function callModel(
    * model, and the ladder would take that for four different rungs failing
    * and try all of them — four refusals saying the same thing.
    */
-  if (usingOwnApi() && !wantedModel()) {
-    throw new Error('No model is named. Settings needs the model your API should answer with.');
+  if (usingOwnApi() && !wantedModel(carriesImage(content))) {
+    throw new Error(
+      carriesImage(content)
+        ? 'No model is named for photos. Settings needs one that accepts pictures.'
+        : 'No model is named. Settings needs the model your API should answer with.',
+    );
   }
 
   const code = authSecret(settings);
