@@ -1,5 +1,5 @@
 import { extractEvents } from './ai';
-import { inNativeApp } from './native';
+import { canFetchNatively, inNativeApp, nativeFetch } from './native';
 import { providerFor } from './providers';
 import { activeEndpoint, authSecret, trying, wantedModel } from './settings';
 import type { Settings } from './types';
@@ -26,9 +26,12 @@ export async function listModels(settings: Settings): Promise<ModelList> {
   const base = activeEndpoint(settings);
   const key = authSecret(settings);
   let res: Response;
+  const native = canFetchNatively();
   try {
-    res = await fetch(`${base}/models`, { headers: key ? { Authorization: `Bearer ${key}` } : {} });
-  } catch {
+    res = await (native ? nativeFetch : fetch)(`${base}/models`, { headers: key ? { Authorization: `Bearer ${key}` } : {} });
+  } catch (err) {
+    // Asked by the app, no browser rule is involved: it is not there.
+    if (native) return { ok: false, why: 'unreachable', detail: (err as Error).message };
     // Refused by the browser or not there at all look the same from here. A
     // request that asks for no reply it may read is not held to the rule, so
     // it tells the two apart.
@@ -113,7 +116,7 @@ export async function checkConnection(settings: Settings, onLine: (lines: CheckL
             ? 'the app was refused, though the address answers'
             : `${provider?.name ?? 'This API'} does not let web pages call it. Choose one that does (OpenAI, OpenRouter, Groq, Mistral).`
           : list.why === 'unreachable'
-            ? 'nothing answered at that address'
+            ? `nothing answered at that address${list.detail ? ` (${list.detail})` : ''}`
             : `the API answered ${list.detail} to a list of models`;
     say({ label: 'Reach the API', state: 'fail', detail });
     // A refused key or a refused browser makes every further check the same failure.

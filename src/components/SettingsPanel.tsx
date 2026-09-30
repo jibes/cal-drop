@@ -315,7 +315,9 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             app ? (
               <>
                 Your key stays on this device and is sent straight to{' '}
-                {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. Links are read on the device.
+                {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
+                not as a web page, so any OpenAI-compatible API works here — including ones that
+                refuse browsers — and links are read on the device.
               </>
             ) : (
               <>

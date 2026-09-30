@@ -1,5 +1,6 @@
 import { activeEndpoint, authSecret, usingOwnApi, wantedModel } from './settings';
 import { shrinkFurther } from './image';
+import { canFetchNatively, nativeFetch } from './native';
 import {
   FRESH,
   type Param,
@@ -906,9 +907,16 @@ async function callModel(
     );
   }
 
+  /**
+   * An API of one's own, asked from the app, is asked by the app itself: the
+   * rule that stops a page calling an API that allows no browsers is the
+   * browser's, and most hosted APIs allow none. The shared endpoint allows
+   * this page, and a browser has no other way.
+   */
+  const native = usingOwnApi() && canFetchNatively();
   let res: Response;
   try {
-    res = await fetch(chatUrl(), {
+    res = await (native ? nativeFetch : fetch)(chatUrl(), {
       method: 'POST',
       signal: options.signal,
       headers: {
@@ -919,6 +927,10 @@ async function callModel(
     });
   } catch (err) {
     if ((err as Error).name === 'AbortError') throw err;
+    // The system says why, in its own words, and no browser rule is involved.
+    if (native) {
+      throw new ReachError(`The API at ${new URL(chatUrl()).host} could not be reached: ${(err as Error).message}`);
+    }
     // A request that never left is usually the endpoint being unreachable —
     // unless it was carrying a photo to an endpoint that does serve this
     // page, in which case the upload itself died and a smaller one may still

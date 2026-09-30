@@ -225,3 +225,121 @@ function htmlToText(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+// ---- API requests made by the app rather than its page ----
+
+interface StreamingHttp {
+  request(options: { id: string; url: string; method: string; headers: Record<string, string>; body: string | null }): Promise<void>;
+  abort(options: { id: string }): Promise<void>;
+  addListener(event: 'head' | 'chunk' | 'end' | 'error', handler: (data: StreamEvent) => void): unknown;
+}
+
+interface StreamEvent {
+  id: string;
+  status?: number;
+  headers?: Record<string, string>;
+  data?: string;
+  message?: string;
+}
+
+const streaming = (): StreamingHttp | undefined =>
+  (globalThis as { Capacitor?: { Plugins?: { StreamingHttp?: StreamingHttp } } }).Capacitor?.Plugins?.StreamingHttp;
+
+/** Whether this app can make a request that no CORS rule applies to, and hand it back as it arrives. */
+export const canFetchNatively = (): boolean => Boolean(streaming());
+
+interface InFlight {
+  head(status: number, headers: Record<string, string>): void;
+  chunk(data: string): void;
+  end(): void;
+  fail(message: string): void;
+}
+
+const inFlight = new Map<string, InFlight>();
+let listening = false;
+
+/** One set of listeners for every request, routed by the id each event carries. */
+function listen(plugin: StreamingHttp): void {
+  if (listening) return;
+  listening = true;
+  // Through Capacitor.Plugins, addListener hands back an id rather than a
+  // promise — see share.ts — so nothing is chained on it.
+  plugin.addListener('head', (e) => inFlight.get(e.id)?.head(e.status ?? 0, e.headers ?? {}));
+  plugin.addListener('chunk', (e) => inFlight.get(e.id)?.chunk(e.data ?? ''));
+  plugin.addListener('end', (e) => inFlight.get(e.id)?.end());
+  plugin.addListener('error', (e) => inFlight.get(e.id)?.fail(e.message ?? 'The request failed.'));
+}
+
+/**
+ * fetch(), made by the app. The answer is an ordinary Response whose body
+ * arrives as the server sends it, so everything that reads a streamed answer
+ * reads this one the same way. A failure before any answer rejects with a
+ * TypeError, as fetch() does; an abort with an AbortError.
+ */
+export function nativeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const plugin = streaming();
+  if (!plugin) return fetch(url, init);
+  listen(plugin);
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start: (c) => void (controller = c),
+    cancel: () => void plugin.abort({ id }),
+  });
+
+  return new Promise<Response>((resolve, reject) => {
+    let answered = false;
+    const done = () => inFlight.delete(id);
+    const stop = (error: Error) => {
+      done();
+      if (!answered) reject(error);
+      else {
+        try {
+          controller?.error(error);
+        } catch {
+          /* already closed */
+        }
+      }
+    };
+    inFlight.set(id, {
+      head: (status, headers) => {
+        answered = true;
+        // A status the Response constructor refuses (a bare 1xx, say) is no answer.
+        try {
+          resolve(new Response(body, { status, headers }));
+        } catch {
+          stop(new TypeError(`The API answered with status ${status}.`));
+        }
+      },
+      chunk: (data) => controller?.enqueue(encoder.encode(data)),
+      end: () => {
+        done();
+        try {
+          controller?.close();
+        } catch {
+          /* cancelled by the reader */
+        }
+      },
+      fail: (message) => stop(new TypeError(message)),
+    });
+
+    const signal = init.signal;
+    if (signal) {
+      if (signal.aborted) {
+        stop(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      signal.addEventListener('abort', () => {
+        void plugin.abort({ id });
+        stop(new DOMException('Aborted', 'AbortError'));
+      });
+    }
+
+    const headers: Record<string, string> = {};
+    new Headers(init.headers).forEach((value, name) => (headers[name] = value));
+    plugin
+      .request({ id, url, method: init.method ?? 'GET', headers, body: typeof init.body === 'string' ? init.body : null })
+      .catch((err: unknown) => stop(new TypeError((err as Error)?.message ?? 'The request could not be made.')));
+  });
+}
