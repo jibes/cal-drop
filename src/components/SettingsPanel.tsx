@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { diagnose } from '../lib/diagnose';
+import { inNativeApp } from '../lib/native';
 import { endpointHost, proxyUrl, resetSettings } from '../lib/settings';
 import type { Method, Settings } from '../lib/types';
 
@@ -20,6 +21,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [testing, setTesting] = useState(false);
 
   const own = method === 'direct';
+  /** The advice below is a browser's; this app is not always one. */
+  const app = inNativeApp();
   const edited = (): Settings => ({ method, accessCode: code, apiBase, apiKey, model });
 
   const runTest = async () => {
@@ -117,13 +120,22 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
         </label>
         <p className="hint">
           {own ? (
-            <>
-              Your key stays on this device and is sent straight to {endpointHost(edited())} —
-              which means the browser has to be allowed to call it. Most hosted providers do not
-              allow that, precisely because a key sent from a page is a key given away; APIs you
-              run yourself usually can. Reading a link needs the shared endpoint and is
-              unavailable here.
-            </>
+            app ? (
+              <>
+                Your key stays on this device and is sent straight to {endpointHost(edited())}.
+                The app calls it through the system rather than as a web page, so providers that
+                refuse browsers — most hosted ones do — work here, and links are read on the
+                device too.
+              </>
+            ) : (
+              <>
+                Your key stays on this device and is sent straight to {endpointHost(edited())} —
+                which means the browser has to be allowed to call it. Most hosted providers do not
+                allow that, precisely because a key sent from a page is a key given away; APIs you
+                run yourself usually can, and so does the Android app. Reading a link needs the
+                shared endpoint and is unavailable here.
+              </>
+            )
           ) : (
             <>
               Stays on this device. Everything else — which model reads your posters, and who

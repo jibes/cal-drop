@@ -134,3 +134,94 @@ export async function saveCalendarFileInApp(events: EventDraft[]): Promise<strin
     return '';
   }
 }
+
+/**
+ * A page, read by the device rather than by the page.
+ *
+ * The same-origin policy is the browser's rule, and inside the shell there is
+ * no browser doing the asking: Capacitor's HTTP goes through the platform's
+ * own stack, where a site that offers no CORS headers is simply a site. So
+ * the one thing the shared endpoint was needed for — fetching a link — the
+ * app can do for itself.
+ *
+ * Deliberately called rather than switched on. Capacitor can be configured to
+ * patch window.fetch so every request goes this way, which would quietly
+ * break the extraction: it reads the model's answer as it arrives, and the
+ * native path returns the body whole. Only this one request is handed over.
+ */
+const MAX_PAGE = 1024 * 1024;
+
+interface NativeHttp {
+  request(options: {
+    url: string;
+    method?: string;
+    responseType?: string;
+    connectTimeout?: number;
+    readTimeout?: number;
+  }): Promise<{ data: unknown; status: number; headers: Record<string, string> }>;
+}
+
+const http = (): NativeHttp | undefined =>
+  (globalThis as { Capacitor?: { Plugins?: { CapacitorHttp?: NativeHttp } } }).Capacitor?.Plugins
+    ?.CapacitorHttp;
+
+export const canReadPagesNatively = (): boolean => Boolean(http());
+
+/**
+ * Running inside the shell rather than in a browser tab. Worth knowing where
+ * the advice differs: a page may not call an API that offers it no CORS
+ * headers, and the app is under no such rule.
+ */
+export function inNativeApp(): boolean {
+  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; Plugins?: object } })
+    .Capacitor;
+  if (typeof cap?.isNativePlatform === 'function') return cap.isNativePlatform();
+  return Boolean(cap?.Plugins);
+}
+
+export async function readPageNatively(url: string): Promise<string> {
+  const bridge = http();
+  if (!bridge) return '';
+  const res = await bridge.request({
+    url,
+    method: 'GET',
+    responseType: 'text',
+    connectTimeout: 15000,
+    readTimeout: 15000,
+  });
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`That page answered with HTTP ${res.status}.`);
+  }
+  const type = headerValue(res.headers, 'content-type');
+  if (type && !/text\/html|text\/plain|application\/xhtml/i.test(type)) {
+    throw new Error(`That link is ${type.split(';')[0]}, not a page with text in it.`);
+  }
+  const body = typeof res.data === 'string' ? res.data : String(res.data ?? '');
+  return htmlToText(body.slice(0, MAX_PAGE));
+}
+
+/** Header names arrive in whatever case the server chose. */
+function headerValue(headers: Record<string, string>, name: string): string {
+  const found = Object.keys(headers || {}).find((k) => k.toLowerCase() === name);
+  return found ? headers[found] : '';
+}
+
+/**
+ * The words a reader would see. Parsed rather than stripped with patterns:
+ * the browser has a real HTML parser, it does not run anything in a document
+ * made this way, and nothing here is ever put back into the live page.
+ */
+function htmlToText(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script, style, noscript, svg, template, nav, footer, header, aside').forEach(
+    (el) => el.remove(),
+  );
+  doc.querySelectorAll('br, p, div, li, h1, h2, h3, h4, h5, h6, tr').forEach((el) =>
+    el.after(doc.createTextNode('\n')),
+  );
+  return (doc.body?.textContent ?? '')
+    .replace(/[ \t ]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

@@ -1,3 +1,4 @@
+import { canReadPagesNatively, readPageNatively } from './native';
 import { describeReach, reachEndpoint } from './reach';
 import { authSecret, proxyEndpoint, usingOwnApi } from './settings';
 import type { Settings } from './types';
@@ -9,22 +10,43 @@ import type { Settings } from './types';
  */
 export async function fetchPageText(url: string, settings: Settings): Promise<string> {
   const target = url.trim();
-  const reader = proxyEndpoint();
+  if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
+
   /**
-   * Reading a page is not something an OpenAI-compatible API does. The
-   * browser cannot do it either — it may not fetch other origins — so with
-   * an API of one's own there is nobody to ask, and saying so beats calling
-   * a route that was never going to be there.
+   * With no endpoint to ask, the device can read the page itself: the rule
+   * that stops a web page fetching another site is the browser's, and inside
+   * the app there is no browser doing the asking.
+   *
+   * Only where there is no endpoint, though. Where one is configured it stays
+   * the reader even in the app, because the two do not fetch alike — a
+   * server's request looks like a browser's and the platform's does not, and
+   * sites do turn away what they take for a robot. Swapping a route that
+   * works for one that might not is not an improvement, whatever it saves in
+   * hops.
+   */
+  const reader = proxyEndpoint();
+  if (!reader && canReadPagesNatively()) {
+    const text = await readPageNatively(target);
+    if (!text.trim()) throw new Error('That page had no readable text. Try a screenshot instead.');
+    return text;
+  }
+
+  /**
+   * Otherwise it takes a server, and the shared endpoint is the only one this
+   * app has. An OpenAI-compatible API has no such route, and a browser may
+   * not fetch other origins, so with an API of one's own there is nobody to
+   * ask — which is worth saying rather than calling a URL that was never
+   * going to be there.
    */
   if (!reader) {
     throw new Error(
       usingOwnApi()
         ? 'Links are read by the shared endpoint, and this app is set to call your own API ' +
-          'directly, which has no such thing. Paste the text, or take a screenshot of the page.'
+          'directly, which has no such thing. Paste the text, take a screenshot, or use the ' +
+          'Android app, which reads pages itself.'
         : 'This build has no endpoint configured, so links cannot be read.',
     );
   }
-  if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
   const code = authSecret(settings);
   let res: Response;
