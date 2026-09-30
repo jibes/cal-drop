@@ -12,23 +12,33 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
   const target = url.trim();
   if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
-  /**
-   * With no endpoint to ask, the device can read the page itself: the rule
-   * that stops a web page fetching another site is the browser's, and inside
-   * the app there is no browser doing the asking.
-   *
-   * Only where there is no endpoint, though. Where one is configured it stays
-   * the reader even in the app, because the two do not fetch alike — a
-   * server's request looks like a browser's and the platform's does not, and
-   * sites do turn away what they take for a robot. Swapping a route that
-   * works for one that might not is not an improvement, whatever it saves in
-   * hops.
-   */
   const reader = proxyEndpoint();
-  if (!reader && canReadPagesNatively()) {
-    const text = await readPageNatively(target);
-    if (!text.trim()) throw new Error('That page had no readable text. Try a screenshot instead.');
-    return text;
+
+  /**
+   * The device reads the page itself where it can. The rule that stops a web
+   * page fetching another site is the browser's, and inside the app there is
+   * no browser doing the asking — so this is one hop instead of two, works
+   * with no endpoint at all, and shows the link to nobody.
+   *
+   * It is tried first rather than used outright, because the two do not fetch
+   * alike: a server's request looks like a browser's and the platform's does
+   * not, and sites do turn away what they take for a robot. So the endpoint
+   * stays as the second answer where there is one — no page that used to be
+   * readable stops being readable, and the failure costs a moment rather than
+   * the result.
+   */
+  let refused: Error | undefined;
+  if (canReadPagesNatively()) {
+    try {
+      const text = await readPageNatively(target);
+      if (text.trim()) return text;
+      refused = new Error('That page had no readable text. Try a screenshot instead.');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      refused = err as Error;
+    }
+    // Nothing came of it and there is nobody else to ask.
+    if (!reader) throw refused;
   }
 
   /**
