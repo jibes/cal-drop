@@ -1,6 +1,6 @@
 import { canReadPagesNatively, readPageNatively } from './native';
 import { describeReach, reachEndpoint } from './reach';
-import { authSecret, proxyEndpoint, usingOwnApi } from './settings';
+import { pageReader, usingOwnApi } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -12,7 +12,7 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
   const target = url.trim();
   if (!/^https?:\/\//i.test(target)) throw new Error('Enter a full http(s) link.');
 
-  const reader = proxyEndpoint();
+  const reader = pageReader(settings);
 
   /**
    * The device reads the page itself where it can. The rule that stops a web
@@ -38,7 +38,7 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
       refused = err as Error;
     }
     // Nothing came of it and there is nobody else to ask.
-    if (!reader) throw refused;
+    if (!reader.url) throw refused;
   }
 
   /**
@@ -48,20 +48,20 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
    * ask — which is worth saying rather than calling a URL that was never
    * going to be there.
    */
-  if (!reader) {
+  if (!reader.url) {
     throw new Error(
       usingOwnApi()
-        ? 'Links are read by the shared endpoint, and this app is set to call your own API ' +
-          'directly, which has no such thing. Paste the text, take a screenshot, or use the ' +
-          'Android app, which reads pages itself.'
+        ? 'Nothing here can read a link. An OpenAI-compatible API has no such route and a browser ' +
+          'may not fetch other sites, so it takes something that will: put one in Settings under ' +
+          '"Link reader" — see fetcher/ in this project — or paste the text, or take a screenshot.'
         : 'This build has no endpoint configured, so links cannot be read.',
     );
   }
 
-  const code = authSecret(settings);
+  const code = reader.code;
   let res: Response;
   try {
-    res = await fetch(`${reader}/fetch`, {
+    res = await fetch(`${reader.url}/fetch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,9 +73,9 @@ export async function fetchPageText(url: string, settings: Settings): Promise<st
     if ((err as Error).name === 'AbortError') throw err;
     // Same bare rejection as everywhere else, and the same way of telling the
     // three causes apart rather than listing them.
-    let host = reader;
+    let host = reader.url;
     try {
-      host = new URL(reader).host;
+      host = new URL(reader.url).host;
     } catch {
       /* an unconfigured endpoint is its own answer */
     }

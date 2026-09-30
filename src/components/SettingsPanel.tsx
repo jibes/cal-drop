@@ -17,6 +17,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
   const [visionModel, setVisionModel] = useState(settings.visionModel);
+  const [pageReader, setPageReader] = useState(settings.pageReader);
+  const [pageReaderCode, setPageReaderCode] = useState(settings.pageReaderCode);
   const [show, setShow] = useState(false);
   const [report, setReport] = useState('');
   const [testing, setTesting] = useState(false);
@@ -24,7 +26,16 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const own = method === 'direct';
   /** The advice below is a browser's; this app is not always one. */
   const app = inNativeApp();
-  const edited = (): Settings => ({ method, accessCode: code, apiBase, apiKey, model, visionModel });
+  const edited = (): Settings => ({
+    method,
+    accessCode: code,
+    apiBase,
+    apiKey,
+    model,
+    visionModel,
+    pageReader,
+    pageReaderCode,
+  });
 
   const runTest = async () => {
     setTesting(true);
@@ -114,6 +125,37 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
               A photo goes to the second one; text and PDFs to the first. Leave it empty if the
               same model reads both — many read only one.
             </p>
+
+            <label>
+              Link reader
+              <input
+                type="url"
+                value={pageReader}
+                onChange={(e) => setPageReader(e.target.value)}
+                placeholder="https://…workers.dev"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Link reader code
+              <input
+                type="password"
+                value={pageReaderCode}
+                onChange={(e) => setPageReaderCode(e.target.value)}
+                placeholder="its access code"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+            </label>
+            <p className="hint">
+              Optional, and only for links. A browser may not fetch another site and an
+              OpenAI-compatible API has no route that does, so reading a link takes something
+              that will — see <code>fetcher/</code> in this project. Photos, text and PDFs need
+              none of this.
+            </p>
           </>
         )}
 
@@ -200,6 +242,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
               setApiKey(fresh.apiKey);
               setModel(fresh.model);
               setVisionModel(fresh.visionModel);
+              setPageReader(fresh.pageReader);
+              setPageReaderCode(fresh.pageReaderCode);
             }}
           >
             Clear

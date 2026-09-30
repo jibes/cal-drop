@@ -52,6 +52,13 @@ export interface Settings {
    * that is a different one. Empty means the same model reads both.
    */
   visionModel: string;
+  /**
+   * Somewhere that will read a web page and hand back its text — see
+   * fetcher/. A browser cannot do it and an OpenAI-compatible API has no such
+   * route, so without one a link cannot be read at all outside the app.
+   */
+  pageReader: string;
+  pageReaderCode: string;
 }
 
 export type SourceKind = 'image' | 'pdf' | 'text' | 'url';

@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - 'worker/**'
+      # The page reader it shares with the fetcher.
+      - 'shared/**'
       - '.github/workflows/deploy-worker.yml'
 
 jobs:

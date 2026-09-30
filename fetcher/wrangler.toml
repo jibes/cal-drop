@@ -1,0 +1,16 @@
+name = "caldrop-fetcher"
+main = "fetcher.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Which pages a browser will let call this. Not a security boundary — anyone
+# calling directly can claim whatever origin they like — so it narrows the
+# blast radius rather than closing the door. The access code closes the door.
+ALLOWED_ORIGINS = "https://jibes.github.io,https://localhost,capacitor://localhost"
+
+# The most of a page that is read before the rest is dropped. A link to a film
+# is otherwise read a megabyte at a time to find no text in it.
+MAX_PAGE_BYTES = "1048576"
+
+# Set ACCESS_CODE as a Worker *secret*, not here. Without one this refuses to
+# serve at all, unless ALLOW_NO_CODE is "yes".

@@ -1,0 +1,87 @@
+name: Deploy fetcher (Cloudflare Worker)
+
+# Deploys fetcher/, which reads a web page and hands back its text. It is the
+# one thing a browser cannot do for itself and an OpenAI-compatible API has no
+# route for, so an app calling its own API needs somewhere to send a link.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'fetcher/**'
+      - 'shared/**'
+      - '.github/workflows/deploy-fetcher.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_ACCESS_CODE: ${{ secrets.FETCHER_ACCESS_CODE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the required secrets are present
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "Add them under Settings -> Secrets and variables -> Actions -> Secrets." >&2
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The secret list is fixed at call time, and uploading an empty
+      # ACCESS_CODE is not the same as uploading none: the worker refuses to
+      # serve without one, which is the intended state until one exists.
+      - name: Deploy (with access code)
+        id: deploy_coded
+        if: env.HAS_ACCESS_CODE == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: fetcher
+          secrets: |
+            ACCESS_CODE
+        env:
+          ACCESS_CODE: ${{ secrets.FETCHER_ACCESS_CODE }}
+
+      - name: Deploy (no code yet)
+        id: deploy_bare
+        if: env.HAS_ACCESS_CODE != 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: fetcher
+
+      - name: Report the fetcher URL
+        run: |
+          {
+            echo "### Fetcher deployed"
+            echo
+            if [ "$HAS_ACCESS_CODE" = "true" ]; then
+              echo "Put this in the app under **Settings → My own API → Link reader**,"
+              echo "with the same code in *Link reader code*:"
+            else
+              echo "No \`FETCHER_ACCESS_CODE\` secret is set, so this refuses to serve anyone."
+              echo "Add one and re-run. Its URL, for when it does:"
+            fi
+            echo
+            echo '```'
+            echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1
+            echo '```'
+            echo
+            echo "A page fetcher makes requests on a stranger's say-so, so the code is what"
+            echo "keeps it yours. ALLOWED_ORIGINS narrows which *pages* may call it and stops"
+            echo "nobody calling it directly."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DEPLOY_OUTPUT: ${{ steps.deploy_coded.outputs.command-output || steps.deploy_bare.outputs.command-output }}

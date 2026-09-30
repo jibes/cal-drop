@@ -27,6 +27,8 @@ export const defaultSettings: Settings = {
   apiKey: '',
   model: DEFAULT_MODEL,
   visionModel: DEFAULT_VISION_MODEL,
+  pageReader: '',
+  pageReaderCode: '',
 };
 
 /**
@@ -59,6 +61,8 @@ export function loadSettings(): Settings {
       // stored takes the default, one deliberately cleared stays cleared.
       model: stored.model === undefined ? DEFAULT_MODEL : clean(stored.model),
       visionModel: stored.visionModel === undefined ? DEFAULT_VISION_MODEL : clean(stored.visionModel),
+      pageReader: clean(stored.pageReader).replace(/\/+$/, ''),
+      pageReaderCode: clean(stored.pageReaderCode),
     };
     return (inForce = settings);
   } catch {
@@ -72,6 +76,8 @@ const empty = (s: Settings): boolean =>
   !s.accessCode.trim() &&
   !s.apiBase.trim() &&
   !s.apiKey.trim() &&
+  !s.pageReader.trim() &&
+  !s.pageReaderCode.trim() &&
   s.model.trim() === DEFAULT_MODEL &&
   s.visionModel.trim() === DEFAULT_VISION_MODEL;
 
@@ -83,6 +89,8 @@ export function saveSettings(s: Settings): void {
     apiKey: s.apiKey.trim(),
     model: s.model.trim(),
     visionModel: s.visionModel.trim(),
+    pageReader: s.pageReader.trim().replace(/\/+$/, ''),
+    pageReaderCode: s.pageReaderCode.trim(),
   };
   inForce = settings;
   try {
@@ -145,6 +153,18 @@ export const wantedModel = (forImage = false, s: Settings = inForce): string => 
   const vision = s.visionModel.trim();
   return forImage && vision ? vision : s.model.trim();
 };
+
+/**
+ * Where a link is read, and what to present when asking. A reader of one's
+ * own comes first: it is the only one that exists in every arrangement,
+ * whereas the shared endpoint is only there when the shared endpoint is.
+ */
+export function pageReader(s: Settings = inForce): { url: string; code: string } {
+  const own = s.pageReader.trim().replace(/\/+$/, '');
+  if (own) return { url: own, code: s.pageReaderCode.trim() };
+  const shared = proxyEndpoint(s);
+  return shared ? { url: shared, code: authSecret(s) } : { url: '', code: '' };
+}
 
 /** Host shown in Settings, so what the app talks to is never a guess. */
 export function endpointHost(s: Settings = inForce): string {
