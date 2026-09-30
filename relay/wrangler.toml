@@ -1,0 +1,14 @@
+name = "caldrop-relay"
+main = "relay.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# Who may call this from a browser. "*" is the ordinary answer: the whole
+# point is to be callable from wherever the app happens to be running, and
+# there is nothing here to steal — no key is held, and every request must
+# carry its own. Narrow it to a list of origins if you would rather.
+ALLOWED_ORIGINS = "*"
+
+# The OpenAI-compatible API this relay forwards to. Fixed here, so this is
+# never a proxy to wherever a caller fancies.
+UPSTREAM_URL = "https://api.melious.ai/v1"

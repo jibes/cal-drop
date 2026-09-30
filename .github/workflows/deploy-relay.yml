@@ -1,0 +1,62 @@
+name: Deploy relay (Cloudflare Worker)
+
+# Deploys relay/, which makes an OpenAI-compatible API callable from a
+# browser and does nothing else. Unlike the shared endpoint it holds no key,
+# so there is no API key secret here and none to leak.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'relay/**'
+      - '.github/workflows/deploy-relay.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the required secrets are present
+        run: |
+          missing=0
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "Add them under Settings -> Secrets and variables -> Actions -> Secrets." >&2
+            exit 1
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: relay
+
+      - name: Report the relay URL
+        run: |
+          {
+            echo "### Relay deployed"
+            echo
+            echo "Put this in the app under **Settings → My own API → API address**,"
+            echo "remembering the \`/v1\`, alongside your own key and the model you want:"
+            echo
+            echo '```'
+            echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1 | sed 's|$|/v1|'
+            echo '```'
+            echo
+            echo "This relay holds no key. Every request must carry its own, so the URL"
+            echo "on its own buys nobody anything — but the key does live in the browser,"
+            echo "where anything on that origin can read it. Use one you can revoke."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DEPLOY_OUTPUT: ${{ steps.deploy.outputs.command-output }}
