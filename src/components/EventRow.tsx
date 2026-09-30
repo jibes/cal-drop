@@ -1,7 +1,12 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/calendar';
-import { addToCalendarApp, calendarAppAvailable, openCalendarFileInApp } from '../lib/native';
+import {
+  addToCalendarApp,
+  calendarAppAvailable,
+  openCalendarFileInApp,
+  saveCalendarFileInApp,
+} from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
 import { downloadIcs, icsLink } from '../lib/ics';
 import { Icon } from './Icon';
@@ -72,6 +77,41 @@ async function openCalendarFile(events: EventDraft[]): Promise<void> {
   if (href) window.location.href = href;
   else downloadIcs(events);
 }
+
+/**
+ * The same file, to keep rather than to hand on.
+ *
+ * Opening it is what the file is usually for, and it is what every route
+ * here did: the endpoint marks it inline, which is the instruction that
+ * makes a phone offer it to a calendar, and the app's own handover fires a
+ * view intent. Neither leaves anything behind. But a calendar to mail on, to
+ * import somewhere else, or simply to keep is a real thing to want, so it is
+ * now its own choice rather than the fallback nobody could reach on purpose.
+ */
+async function saveCalendarFile(events: EventDraft[]): Promise<void> {
+  if (await saveCalendarFileInApp(events)) return;
+  // Asking the endpoint for it as an attachment keeps the browser's own
+  // download in charge of where it goes; a blob does the same where there is
+  // no endpoint, or where the calendar is too long to travel in a URL.
+  const href = icsLink(events, true);
+  if (href) window.location.href = href;
+  else downloadIcs(events);
+}
+
+/**
+ * The two things that can be done with the file. Which of them the main
+ * button already does decides which of them the menu needs to offer, so
+ * neither is ever listed beside a button that does the same thing.
+ */
+const openOption = (events: EventDraft[]): Option => ({
+  label: 'Open in an app (.ics)',
+  run: () => void openCalendarFile(events),
+});
+
+const saveOption = (events: EventDraft[]): Option => ({
+  label: 'Download the .ics file',
+  run: () => void saveCalendarFile(events),
+});
 
 interface Option {
   label: string;
@@ -184,7 +224,7 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
         <AddButton
           label={`Add ${events.length} to calendar`}
           onAdd={() => openCalendarFile(events)}
-          options={[]}
+          options={[saveOption(events)]}
         />
         {children}
       </div>
@@ -193,9 +233,11 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
 
   const web = (url: string) => () => window.open(url, '_blank', 'noreferrer');
   const others: Option[] = [
-    // In the app the main button goes straight to the calendar, so the file is
-    // an alternative; in a browser the file is what the main button is.
-    ...(calendarApp ? [{ label: 'Calendar file (.ics)', run: () => void openCalendarFile(events) }] : []),
+    // In the app the main button goes straight into the calendar, so opening
+    // the file is a genuine alternative; in a browser that is what the main
+    // button already does, and only keeping the file is left to offer.
+    ...(calendarApp ? [openOption(events)] : []),
+    saveOption(events),
     { label: 'Google Calendar', run: web(googleCalendarUrl(single)) },
     { label: 'Outlook', run: web(outlookCalendarUrl(single)) },
   ];

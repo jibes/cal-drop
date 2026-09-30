@@ -356,12 +356,20 @@ export default {
       }
 
       const name = (requestUrl.searchParams.get('n') || 'event').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 40);
+      /**
+       * Which of the two things the phone should do with it.
+       *
+       * "inline" is what makes an OS offer the file to a calendar app instead
+       * of filing it away, and it is the default because adding the event is
+       * what the file is for. But a file kept is sometimes the point — to
+       * mail on, to import later, to keep — and that is "attachment", which
+       * is the instruction to save. Same calendar, same link, one parameter.
+       */
+      const disposition = requestUrl.searchParams.get('dl') === '1' ? 'attachment' : 'inline';
       return new Response(text, {
         headers: {
           'Content-Type': 'text/calendar; charset=utf-8',
-          // Not "attachment": that is the instruction to download and ask where
-          // to save. Inline lets a browser hand the file to whatever opens it.
-          'Content-Disposition': `inline; filename="${name || 'event'}.ics"`,
+          'Content-Disposition': `${disposition}; filename="${name || 'event'}.ics"`,
           'Cache-Control': 'no-store',
           ...headers,
         },

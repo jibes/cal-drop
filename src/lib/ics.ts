@@ -138,7 +138,11 @@ export function icsName(events: EventDraft[]): string {
   return events.length === 1 ? slug(events[0].title) : 'events';
 }
 
-export function icsLink(events: EventDraft[]): string {
+/**
+ * @param download ask the endpoint to send it as a file to keep rather than
+ *   one to hand straight to a calendar. Same calendar, same route.
+ */
+export function icsLink(events: EventDraft[], download = false): string {
   if (!endpoint || events.length === 0) return '';
   const bytes = new TextEncoder().encode(buildIcs(events));
   let binary = '';
@@ -146,7 +150,8 @@ export function icsLink(events: EventDraft[]): string {
   const encoded = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   if (encoded.length > 12000) return '';
   const name = icsName(events);
-  return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}&c=${encoded}`;
+  const dl = download ? '&dl=1' : '';
+  return `${endpoint.replace(/\/+$/, '')}/ics?n=${encodeURIComponent(name)}${dl}&c=${encoded}`;
 }
 
 export function downloadIcs(events: EventDraft[]): void {

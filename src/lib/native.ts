@@ -17,6 +17,8 @@ interface CalendarInsert {
   insert(event: InsertPayload): Promise<{ opened: boolean }>;
   /** Absent in shells built before it existed. */
   openFile?(file: { name: string; content: string }): Promise<{ opened: string }>;
+  /** Likewise. Puts the file in Downloads instead of handing it to an app. */
+  saveFile?(file: { name: string; content: string }): Promise<{ saved: string }>;
 }
 
 interface InsertPayload {
@@ -111,5 +113,24 @@ export async function openCalendarFileInApp(events: EventDraft[]): Promise<boole
     return Boolean(opened);
   } catch {
     return false;
+  }
+}
+
+/**
+ * The same file, kept instead of handed on.
+ *
+ * A browser downloads by following a link the server marks as an attachment;
+ * a web view inside an app has nowhere to put one, so the shell writes it to
+ * the phone's Downloads itself. Returns where it landed, or '' where there is
+ * no shell to ask — in which case the caller asks the endpoint for it instead.
+ */
+export async function saveCalendarFileInApp(events: EventDraft[]): Promise<string> {
+  const save = plugin()?.saveFile;
+  if (!save || events.length === 0) return '';
+  try {
+    const { saved } = await save.call(plugin(), { name: icsName(events), content: buildIcs(events) });
+    return saved || '';
+  } catch {
+    return '';
   }
 }
