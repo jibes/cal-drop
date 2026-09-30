@@ -5,7 +5,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
 import { fileToDataUrl } from './lib/image';
-import { loadSettings, saveSettings } from './lib/settings';
+import { activeEndpoint, loadSettings, saveSettings } from './lib/settings';
 import { firstUrlIn, onShared, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
 import { fetchPageText } from './lib/url';
@@ -20,7 +20,10 @@ const NOTHING_FOUND: Record<ExtractionSource['kind'], string> = {
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => loadSettings());
-  const [showSettings, setShowSettings] = useState(false);
+  // Nothing to talk to yet — a public build, opened for the first time — so
+  // the first screen is the one that sets that up, not a camera that cannot
+  // send anything anywhere.
+  const [showSettings, setShowSettings] = useState(() => !activeEndpoint(settings));
   const [events, setEvents] = useState<EventDraft[]>([]);
   // Everything found is wanted until said otherwise; a poster listing six
   // events usually means six events, not a menu to pick one from.

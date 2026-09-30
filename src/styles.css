@@ -181,6 +181,7 @@ button.button:disabled:hover { border-color: var(--line); }
 .dropzone.dragging { border-color: var(--accent); background: var(--surface-2); }
 
 input,
+select,
 textarea {
   font: inherit;
   width: 100%;
@@ -191,7 +192,7 @@ textarea {
   padding: 10px 12px;
 }
 
-input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 input:disabled { opacity: 0.5; }
 
 /* The field label: a caption above an input. A label that is a button is not
@@ -1186,3 +1187,14 @@ button:active:not(:disabled),
 /* Until the first frame, the frame is black — not the browser's placeholder. */
 .stage video { transition: opacity 0.15s ease; }
 .stage video.waiting { opacity: 0; }
+
+/* ---- connection check ---- */
+
+.hint.warn { color: var(--warn); }
+
+.checks { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.checks li { padding-left: 1.4em; text-indent: -1.4em; }
+.checks li.ok span { color: var(--good); }
+.checks li.fail span { color: var(--bad); }
+.checks li.warn span { color: var(--warn); }
+.checks li.skip { color: var(--muted); }

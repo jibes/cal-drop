@@ -17,8 +17,10 @@ export const endpoint = proxyUrl;
  * what to type. They are a starting point and nothing more: an API of one's
  * own is somebody else's, and both fields are there to be changed.
  */
-const DEFAULT_MODEL = 'gemma-4-31b';
-const DEFAULT_VISION_MODEL = 'gemma-3-27b-it';
+// Only where there is a shared endpoint whose provider these are; a public
+// build knows nothing of anyone's provider, and the list comes from theirs.
+const DEFAULT_MODEL = proxyUrl ? 'gemma-4-31b' : '';
+const DEFAULT_VISION_MODEL = proxyUrl ? 'gemma-3-27b-it' : '';
 
 export const defaultSettings: Settings = {
   method: proxyUrl ? 'proxy' : 'direct',
@@ -201,5 +203,20 @@ export function endpointHost(s: Settings = inForce): string {
     return new URL(url).host;
   } catch {
     return url || 'not configured';
+  }
+}
+
+/**
+ * Run something as if these settings were in force, without saving them —
+ * so that "Test connection" tries what is on the screen, through the same
+ * code a real read takes, before anyone has pressed Save.
+ */
+export async function trying<T>(s: Settings, run: () => Promise<T>): Promise<T> {
+  const before = inForce;
+  inForce = s;
+  try {
+    return await run();
+  } finally {
+    inForce = before;
   }
 }
