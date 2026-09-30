@@ -7,10 +7,6 @@ import {
   forgetLens,
   hasTorch,
   openCamera,
-  rearCameras,
-  rememberedLens,
-  rememberLens,
-  selectableLenses,
   setTorch,
   takeShot,
 } from '../lib/camera';
@@ -113,9 +109,6 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
    * cropped to this instead.
    */
   const [ratio, setRatio] = useState(4 / 3);
-  /** Which rear camera, when the phone has several and names none of them. */
-  const [lens, setLens] = useState('');
-  const [lenses, setLenses] = useState<MediaDeviceInfo[]>([]);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(PREFERENCE) === 'off';
@@ -181,37 +174,33 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
    */
   const busyOpening = useRef(false);
 
-  const start = useCallback(async (wanted = rememberedLens()) => {
+  const start = useCallback(async () => {
     if (streamRef.current || busyOpening.current) return;
     busyOpening.current = true;
     setOpening(true);
     setError('');
     try {
-      let stream = await openCamera(wanted);
-
-      // Labels are unreadable until permission exists, so which lens this
-      // should be can only be worked out once something is already open.
-      const usable = selectableLenses(await rearCameras());
-      setLenses(usable);
+      let stream = await openCamera();
+      forgetLens();
 
       /**
-       * An ultra-wide is never the right lens for a poster, and it can be
-       * opened two ways: the system picks it for facingMode, or it is what
-       * was remembered from a switch. The second outlives a reload, so it is
-       * not enough to pass over it — it has to be forgotten, or every visit
-       * reopens the 0.5 view.
+       * One camera, the ordinary one.
+       *
+       * Switching lenses used to be offered because nothing in the API says
+       * which of three rear cameras is the plain one — but what the chip
+       * mostly did was reach the ultra-wide, which frames a poster small and
+       * bends its edges, and then remember it. Filtering it out by name does
+       * not work where there are no names: Android calls them "camera2 0,
+       * facing back", so the filter matches nothing and offers all three.
+       * Labels are unreadable until permission exists, so this can only be
+       * settled once something is already open.
        */
       const open = stream.getVideoTracks()[0]?.getSettings().deviceId;
-      const unwanted = Boolean(open) && usable.length > 0 && !usable.some((d) => d.deviceId === open);
-      if (unwanted) forgetLens();
-      if (!wanted || unwanted) {
-        const preferred = await defaultRearCamera();
-        if (preferred && preferred !== open) {
-          closeCamera(stream);
-          stream = await openCamera(preferred);
-        }
+      const preferred = await defaultRearCamera();
+      if (preferred && preferred !== open) {
+        closeCamera(stream);
+        stream = await openCamera(preferred);
       }
-      setLens(stream.getVideoTracks()[0]?.getSettings().deviceId ?? '');
       streamRef.current = stream;
       setTorchable(hasTorch(stream));
       setLive(true);
@@ -388,9 +377,9 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
     if (!stream || !video) return;
     let shot: Prepared;
     try {
-      // The shape on screen is handed to the shutter, which crops to it if the
-      // camera hands back something else. What was framed is what is sent.
-      shot = await takeShot(stream, video, ratio);
+      // The frame on screen is the photo. Nothing is reconciled, because
+      // there are no longer two pictures to reconcile.
+      shot = takeShot(video);
     } catch (err) {
       setError(`That shot failed: ${(err as Error).message}`);
       return;
@@ -404,17 +393,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
         ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, take it with the camera app and share it to CalDrop.`
         : '',
     );
-  }, [onShots, ratio]);
-
-  /** No API says which lens is the ordinary one, so offer the others. */
-  const nextLens = async () => {
-    if (lenses.length < 2) return;
-    const at = Math.max(0, lenses.findIndex((d) => d.deviceId === lens));
-    const pick = lenses[(at + 1) % lenses.length].deviceId;
-    rememberLens(pick);
-    stop();
-    await start(pick);
-  };
+  }, [onShots]);
 
   const toggleTorch = async () => {
     const next = !torch;
@@ -491,16 +470,6 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
         {error && <p className="stage-error">{error}</p>}
 
         <div className="stage-top">
-          {lenses.length > 1 && (
-            <button
-              className="vf-chip"
-              onClick={() => void nextLens()}
-              aria-label={`Switch lens (${Math.max(0, lenses.findIndex((d) => d.deviceId === lens)) + 1} of ${lenses.length})`}
-              title="Switch lens"
-            >
-              <Icon name="lens" />
-            </button>
-          )}
           {torchable && (
             <button
               className="vf-chip"

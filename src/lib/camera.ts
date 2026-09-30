@@ -1,23 +1,21 @@
-import { frameToDataUrl, prepareImage, type Prepared } from './image';
+import { frameToDataUrl, type Prepared } from './image';
 
 /**
  * The camera, in the page rather than in another app.
  *
- * Where a browser offers ImageCapture the photo comes from the device's still
- * pipeline, which is close to what the camera app would have produced. Where it
- * does not — Safari, at the time of writing — a video frame is grabbed instead,
- * which is softer and smaller. That difference is worth telling the user about
- * when it matters, which is what Prepared's dimensions are for.
+ * The photo is the frame that was on screen, and nothing else. A device's
+ * still pipeline takes a better picture in general, but not the picture that
+ * was being aimed: it answers in the sensor's own orientation, and it can
+ * use more of the sensor than the preview stream does, so the photo comes
+ * back holding things that were never in the viewfinder. Matching their
+ * shapes does not catch that second case — the frames agree and the fields
+ * of view do not.
+ *
+ * Nothing is lost by declining it. Everything on its way to the model is
+ * reduced to 1280px first, which is below what the preview stream already
+ * gives, so the still's extra detail was being thrown away before it was
+ * ever sent. What it cost was the one promise the viewfinder makes.
  */
-
-interface ImageCaptureLike {
-  takePhoto(): Promise<Blob>;
-}
-
-type ImageCaptureCtor = new (track: MediaStreamTrack) => ImageCaptureLike;
-
-const imageCapture = (): ImageCaptureCtor | undefined =>
-  (window as unknown as { ImageCapture?: ImageCaptureCtor }).ImageCapture;
 
 export function cameraSupported(): boolean {
   return Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
@@ -132,21 +130,11 @@ export async function defaultRearCamera(): Promise<string> {
   return (plain[0] ?? rear[0]).deviceId;
 }
 
-/** The lenses worth offering: the ordinary ones, never the 0.5. */
-export function selectableLenses(rear: MediaDeviceInfo[]): MediaDeviceInfo[] {
-  const plain = rear.filter((d) => !isUltraWide(d.label));
-  return plain.length > 0 ? plain : rear;
-}
-
-export function rememberedLens(): string {
-  try {
-    return localStorage.getItem(LENS_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-/** Forget a lens that should never have been remembered. */
+/**
+ * A lens chosen in an older build, which there is no longer any way to
+ * choose — and which may well be the ultra-wide this now avoids. Cleared on
+ * the way past, so nobody stays stuck on it.
+ */
 export function forgetLens(): void {
   try {
     localStorage.removeItem(LENS_KEY);
@@ -155,61 +143,17 @@ export function forgetLens(): void {
   }
 }
 
-export function rememberLens(deviceId: string): void {
-  try {
-    localStorage.setItem(LENS_KEY, deviceId);
-  } catch {
-    /* the choice simply will not persist */
-  }
-}
-
 export function closeCamera(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
 /**
- * Take the picture the viewfinder was showing.
- *
- * The still pipeline gives a sharper photo than a video frame, and it is used
- * wherever it gives the same photo. That has to be checked rather than assumed:
- * a device hands back the still in its sensor's own orientation, so a phone
- * held upright previews a portrait frame and then delivers a landscape one.
- * Cropping that to the preview's shape does not recover the preview — it keeps
- * the middle of a picture whose sides were never on screen, and drops the top
- * and bottom that were. That is how a photo came to disagree with the frame it
- * was aimed with.
- *
- * So the still is taken, and kept only if its shape matches what was being
- * shown. Otherwise the video frame is used, which cannot disagree: it is the
- * very image that was on screen.
+ * Take the picture the viewfinder was showing — which is the frame itself,
+ * so there is nothing to reconcile and no way for the two to disagree.
  */
-export async function takeShot(
-  stream: MediaStream,
-  video: HTMLVideoElement,
-  frame = 0,
-): Promise<Prepared> {
-  const [track] = stream.getVideoTracks();
-  const Ctor = imageCapture();
-  const shown = frame || (video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 0);
-
-  if (track && Ctor) {
-    try {
-      // Uncropped, deliberately. Asking for the crop first would reshape the
-      // still to the preview and make the comparison below answer yes every
-      // time — which is exactly how the mismatch went unnoticed. A still that
-      // matches needs no crop anyway; one that does not cannot be saved by it.
-      const still = await prepareImage(await new Ctor(track).takePhoto());
-      if (!shown || sameShape(still.width / still.height, shown)) return still;
-    } catch {
-      // Some devices advertise it and then refuse; the frame is still there.
-    }
-  }
+export function takeShot(video: HTMLVideoElement): Prepared {
   return frameToDataUrl(video);
 }
-
-/** Close enough that no one could tell the two frames apart — a percent or so,
- *  which covers rounding in the crop without letting an orientation through. */
-const sameShape = (a: number, b: number): boolean => Math.abs(a - b) / b < 0.02;
 
 interface TorchCapabilities extends MediaTrackCapabilities {
   torch?: boolean;
