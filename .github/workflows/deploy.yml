@@ -18,12 +18,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Nothing is deployed that fails its tests — they need no network and no
+      # key: the API they talk to is a pretend one.
+      - run: npm test
       - name: Build
         # An unset repository variable arrives as an empty string, and an empty
         # VITE_PROXY_URL overrides the committed default with nothing — which

@@ -1,5 +1,16 @@
 import { activeEndpoint, authSecret, usingOwnApi, wantedModel } from './settings';
 import { shrinkFurther } from './image';
+import {
+  FRESH,
+  type Param,
+  type Quirks,
+  refusedParam,
+  rememberQuirks,
+  rememberedQuirks,
+  sentParams,
+  tuning,
+  withoutRefused,
+} from './params';
 import { describeReach, reachEndpoint } from './reach';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
@@ -249,6 +260,20 @@ class TransportError extends Error {}
 /** An answer with nothing in it, which may be the room asked for rather than
  *  the shape of the asking. */
 class EmptyAnswer extends RungError {}
+
+/**
+ * One parameter was refused, by name. Asked again without it, the same way of
+ * asking may well work — see params.ts — so this is tried before the next
+ * rung. When nothing is left to take away, it is a rung that does not work.
+ */
+class ParamRefused extends RungError {
+  constructor(
+    readonly param: Param,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * The model used the whole allowance before writing a word — thinking, on a
@@ -753,9 +778,21 @@ export function requestBody(
   attempt = rememberedRung('text'),
   stream = true,
   cap = MAX_OUTPUT_TOKENS,
+  quirks: Quirks = FRESH,
 ) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   const model = wantedModel(carriesImage(content));
+  /**
+   * The allowance, the temperature and how much to think. For an API of one's
+   * own they are whatever it has shown it accepts (params.ts); the shared
+   * endpoint takes max_tokens and decides the reasoning itself.
+   */
+  const tuned = usingOwnApi()
+    ? tuning(quirks, carriesImage(content) ? null : cap, rung.temperature)
+    : {
+        ...(carriesImage(content) ? {} : { max_tokens: cap }),
+        ...(rung.temperature ? { temperature: 0 } : {}),
+      };
   return {
     /**
      * A model is named only where naming one is the caller's job. The shared
@@ -774,9 +811,8 @@ export function requestBody(
     // silently dropped" — but text has always been answered with it, and
     // without any cap an answer that does not stop has nothing to stop it.
     stream,
-    ...(carriesImage(content) ? {} : { max_tokens: cap }),
+    ...tuned,
     messages: messagesFor(rung, content),
-    ...(rung.temperature ? { temperature: 0 } : {}),
     ...(rung.structured === 'tools'
       ? {
           tools: [
@@ -831,6 +867,7 @@ async function callModel(
   options: ExtractOptions,
   stream = true,
   cap = MAX_OUTPUT_TOKENS,
+  quirks: Quirks = FRESH,
 ): Promise<{ text: string; broken: boolean; truncated: boolean }> {
   if (!activeEndpoint()) throw new Error(NO_ENDPOINT);
   /**
@@ -857,8 +894,11 @@ async function callModel(
    * here all along.
    */
   let body: string;
+  let sent: Param[] = [];
   try {
-    body = JSON.stringify(requestBody(content, attempt, stream, cap));
+    const built = requestBody(content, attempt, stream, cap, quirks);
+    sent = sentParams(built);
+    body = JSON.stringify(built);
   } catch (err) {
     throw new Error(
       `This source could not be turned into a request: ${(err as Error).message}. ` +
@@ -891,9 +931,13 @@ async function callModel(
   }
 
   if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).slice(0, 400);
+    const whole = await res.text().catch(() => '');
+    const detail = whole.slice(0, 400);
     let message = '';
-    message = complaint(detail);
+    message = complaint(whole) || complaint(detail);
+    // One parameter named as the trouble is worth asking again without.
+    const refused = usingOwnApi() ? refusedParam(res.status, whole, sent) : null;
+    if (refused) throw new ParamRefused(refused, message || `The API refused ${refused}.`);
     if (res.status === 401 || res.status === 403) {
       throw new Error(message || 'Wrong or missing access code. Enter it in Settings.');
     }
@@ -958,6 +1002,11 @@ async function runPass(
   // answering in prose that will not parse; none of those is the endpoint's
   // final word while a rung remains untried.
   let cap = rememberedCap(shape);
+  /** What this API and model have shown they accept; see params.ts. */
+  const api = activeEndpoint();
+  const model = wantedModel(shape === 'image');
+  let quirks = usingOwnApi() ? rememberedQuirks(api, model) : FRESH;
+  let adjustments = 0;
 
   for (const attempt of rungOrder(shape)) {
     /** One rung, by both routes: streamed, then — if the line broke rather
@@ -978,9 +1027,21 @@ async function runPass(
          */
         for (;;) {
           try {
-            answer = await callModel(content, settings, attempt, options, stream, CAPS[cap]);
+            answer = await callModel(content, settings, attempt, options, stream, CAPS[cap], quirks);
             break;
           } catch (err) {
+            // A parameter refused by name: the same request without it. At
+            // most one step per parameter it could be (three tokens names,
+            // temperature, three reasoning levels), so this cannot go round.
+            if (err instanceof ParamRefused && adjustments < 6) {
+              const next = withoutRefused(quirks, err.param);
+              if (next) {
+                quirks = next;
+                adjustments += 1;
+                rememberQuirks(api, model, quirks);
+                continue;
+              }
+            }
             if (err instanceof EmptyAnswer && cap + 1 < CAPS.length && !carriesImage(content)) {
               cap += 1;
               continue;
@@ -1008,6 +1069,7 @@ async function runPass(
           const parsed = parseJson(answer.text);
           rememberRung(shape, attempt);
           rememberCap(shape, cap);
+          if (usingOwnApi()) rememberQuirks(api, model, quirks);
           const events = Array.isArray(parsed.events) ? parsed.events : [];
           return events.map(toDraft).filter((e) => e.startDate);
         } catch (err) {

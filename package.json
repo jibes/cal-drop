@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false || tsc -b",
-    "probe": "node scripts/probe-endpoint.mjs"
+    "probe": "node scripts/probe-endpoint.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "pdfjs-dist": "^4.7.76",
@@ -20,6 +21,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^3.2.7"
   }
 }
