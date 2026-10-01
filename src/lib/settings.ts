@@ -3,7 +3,9 @@ import type { LinkReader, Settings } from './types';
 const KEY = 'caldrop.settings.v1';
 
 /** The shared endpoint this build was given. Set at deploy time; see worker/. */
-export const proxyUrl = ((import.meta.env.VITE_PROXY_URL as string) || '').trim().replace(/\/+$/, '');
+/** "none" builds an app with no shared endpoint on purpose: own API only, as a public release is. */
+const configuredProxy = ((import.meta.env.VITE_PROXY_URL as string) || '').trim();
+export const proxyUrl = configuredProxy === 'none' ? '' : configuredProxy.replace(/\/+$/, '');
 
 /** Kept for the many places that only ever meant the shared endpoint. */
 export const endpoint = proxyUrl;
