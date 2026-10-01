@@ -90,6 +90,62 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const secret = own ? apiKey : code;
   const setSecret = own ? setApiKey : setCode;
 
+  /** The key, or the access code, with what to know about where it goes. */
+  const secretFields = (
+    <>
+      <label>
+        {own ? 'API key' : 'Access code'}
+        <span className="row">
+          <input
+            type={show ? 'text' : 'password'}
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={own ? 'sk-…' : 'from whoever runs this'}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            onKeyDown={(e) => e.key === 'Enter' && onSave(edited())}
+          />
+          <button type="button" className="ghost" onClick={() => setShow((v) => !v)}>
+            {show ? 'Hide' : 'Show'}
+          </button>
+        </span>
+      </label>
+      {own && provider?.keys && (
+        <p className="hint">
+          A key comes from <code>{provider.keys}</code>. One with a spending limit is the safe kind
+          to put in an app.
+        </p>
+      )}
+      <p className="hint">
+        {own ? (
+          app ? (
+            <>
+              Your key stays on this device{secretsAreEncrypted() ? ', encrypted,' : ''} and is sent
+              straight to{' '}
+              {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
+              not as a web page, so any OpenAI-compatible API works here — including ones that
+              refuse browsers — and links are read on the device.
+            </>
+          ) : (
+            <>
+              Your key stays in this browser and is sent straight to{' '}
+              {apiBase.trim() ? endpointHost(edited()) : 'the API above'} —
+              which means the browser has to be allowed to call it. Most hosted providers do not
+              allow that, precisely because a key sent from a page is a key given away; OpenAI and
+              OpenRouter do, and APIs you run yourself usually can.
+            </>
+          )
+        ) : (
+          <>
+            Stays on this device{secretsAreEncrypted() ? ', encrypted' : ''}. Everything else — which model reads your posters, and who
+            pays for it — is set by whoever runs {endpointHost(edited())}.
+          </>
+        )}
+      </p>
+    </>
+  );
+
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -170,6 +226,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
                 spellCheck={false}
               />
             </label>
+            {secretFields}
             <label>
               Model
               <input
@@ -286,56 +343,9 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           </>
         )}
 
-        <label>
-          {own ? 'API key' : 'Access code'}
-          <span className="row">
-            <input
-              type={show ? 'text' : 'password'}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder={own ? 'sk-…' : 'from whoever runs this'}
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              onKeyDown={(e) => e.key === 'Enter' && onSave(edited())}
-            />
-            <button type="button" className="ghost" onClick={() => setShow((v) => !v)}>
-              {show ? 'Hide' : 'Show'}
-            </button>
-          </span>
-        </label>
-        {own && provider?.keys && (
-          <p className="hint">
-            A key comes from <code>{provider.keys}</code>. One with a spending limit is the safe kind
-            to put in an app.
-          </p>
-        )}
-        <p className="hint">
-          {own ? (
-            app ? (
-              <>
-                Your key stays on this device{secretsAreEncrypted() ? ', encrypted,' : ''} and is sent
-                straight to{' '}
-                {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
-                not as a web page, so any OpenAI-compatible API works here — including ones that
-                refuse browsers — and links are read on the device.
-              </>
-            ) : (
-              <>
-                Your key stays in this browser and is sent straight to{' '}
-                {apiBase.trim() ? endpointHost(edited()) : 'the API above'} —
-                which means the browser has to be allowed to call it. Most hosted providers do not
-                allow that, precisely because a key sent from a page is a key given away; OpenAI and
-                OpenRouter do, and APIs you run yourself usually can.
-              </>
-            )
-          ) : (
-            <>
-              Stays on this device{secretsAreEncrypted() ? ', encrypted' : ''}. Everything else — which model reads your posters, and who
-              pays for it — is set by whoever runs {endpointHost(edited())}.
-            </>
-          )}
-        </p>
+        {/* The access code is all a shared endpoint needs; for an API of one's own the
+            key sits with its address, above. */}
+        {!own && secretFields}
 
         <div className="diagnose">
           {own ? (
