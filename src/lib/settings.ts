@@ -49,10 +49,80 @@ let inForce: Settings = { ...defaultSettings };
 
 const clean = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+// ---- secrets ----
+
+/**
+ * The fields that are worth something to whoever reads them: a key spends
+ * money, a code lets someone else spend it. In the app they are kept in the
+ * phone's keystore-encrypted store (SecureStore, see cal-drop-app), not in
+ * localStorage, which is a plain file in the app's data. A browser has no
+ * such store, and there they stay where they were — which Settings says.
+ */
+const SECRETS = ['accessCode', 'apiKey', 'jinaKey', 'pageReaderCode'] as const;
+type Secret = (typeof SECRETS)[number];
+
+interface SecureStore {
+  get(o: { name: string }): Promise<{ value: string | null }>;
+  set(o: { name: string; value: string }): Promise<void>;
+  remove(o: { name: string }): Promise<void>;
+}
+
+const secureStore = (): SecureStore | undefined =>
+  (globalThis as { Capacitor?: { Plugins?: { SecureStore?: SecureStore } } }).Capacitor?.Plugins?.SecureStore;
+
+/** The secrets as the secure store holds them; null where there is no such store. */
+let secrets: Record<Secret, string> | null = null;
+
+/** Whether the secrets are kept in the phone's encrypted store rather than localStorage. */
+export const secretsAreEncrypted = (): boolean => secrets !== null;
+
+/**
+ * Read the secrets before anything else reads the settings — called once, at
+ * startup, before the first screen. Anything still in localStorage from an
+ * earlier build moves into the encrypted store and is removed from there, so
+ * nobody has to type their code again. If the store fails, the settings work
+ * as they always did.
+ */
+export async function prepareSecrets(): Promise<void> {
+  const store = secureStore();
+  if (!store) return;
+  try {
+    const found = {} as Record<Secret, string>;
+    for (const name of SECRETS) found[name] = (await store.get({ name })).value ?? '';
+
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const stored = JSON.parse(raw) as Record<string, unknown>;
+      // Older builds kept the access code under apiKey, with no method at all.
+      if (stored.method === undefined && clean(stored.apiKey) && !clean(stored.accessCode)) {
+        stored.accessCode = stored.apiKey;
+        stored.apiKey = '';
+      }
+      let moved = false;
+      for (const name of SECRETS) {
+        const value = clean(stored[name]);
+        if (value && !found[name]) {
+          await store.set({ name, value });
+          found[name] = value;
+        }
+        if (name in stored) {
+          delete stored[name];
+          moved = true;
+        }
+      }
+      // Only once every value is safely in the store does it leave localStorage.
+      if (moved) localStorage.setItem(KEY, JSON.stringify(stored));
+    }
+    secrets = found;
+  } catch {
+    secrets = null;
+  }
+}
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return (inForce = { ...defaultSettings });
+    if (!raw) return (inForce = { ...defaultSettings, ...(secrets ?? {}) });
     const stored = JSON.parse(raw) as Partial<Settings> & { apiKey?: string };
     // Older builds stored the access code in a field called apiKey, and knew
     // of no method at all — those settings are a proxy's, whatever they hold.
@@ -77,9 +147,10 @@ export function loadSettings(): Settings {
           : 'off',
       jinaKey: clean(stored.jinaKey),
     };
+    if (secrets) Object.assign(settings, secrets);
     return (inForce = settings);
   } catch {
-    return (inForce = { ...defaultSettings });
+    return (inForce = { ...defaultSettings, ...(secrets ?? {}) });
   }
 }
 
@@ -110,15 +181,37 @@ export function saveSettings(s: Settings): void {
     jinaKey: s.jinaKey.trim(),
   };
   inForce = settings;
+
+  // In the app the secrets go to the encrypted store and nowhere else.
+  let plain: Partial<Settings> = settings;
+  const store = secureStore();
+  if (secrets && store) {
+    const held = secrets;
+    for (const name of SECRETS) {
+      if (held[name] !== settings[name]) {
+        held[name] = settings[name];
+        void store.set({ name, value: settings[name] }).catch(() => undefined);
+      }
+    }
+    plain = { ...settings };
+    for (const name of SECRETS) delete plain[name];
+  }
   try {
     if (empty(settings) && settings.method === defaultSettings.method) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify(settings));
+    else localStorage.setItem(KEY, JSON.stringify(plain));
   } catch {
     /* private mode / storage disabled — settings just don't persist */
   }
 }
 
 export function resetSettings(): Settings {
+  const store = secureStore();
+  if (secrets && store) {
+    for (const name of SECRETS) {
+      secrets[name] = '';
+      void store.remove({ name }).catch(() => undefined);
+    }
+  }
   try {
     localStorage.removeItem(KEY);
   } catch {

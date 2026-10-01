@@ -3,7 +3,7 @@ import { checkConnection, listModels, type CheckLine } from '../lib/check';
 import { diagnose } from '../lib/diagnose';
 import { inNativeApp } from '../lib/native';
 import { PROVIDERS, providerFor } from '../lib/providers';
-import { endpointHost, proxyUrl, resetSettings } from '../lib/settings';
+import { endpointHost, proxyUrl, resetSettings, secretsAreEncrypted } from '../lib/settings';
 import type { LinkReader, Method, Settings } from '../lib/types';
 
 interface Props {
@@ -314,7 +314,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           {own ? (
             app ? (
               <>
-                Your key stays on this device and is sent straight to{' '}
+                Your key stays on this device{secretsAreEncrypted() ? ', encrypted,' : ''} and is sent
+                straight to{' '}
                 {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
                 not as a web page, so any OpenAI-compatible API works here — including ones that
                 refuse browsers — and links are read on the device.
@@ -330,7 +331,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             )
           ) : (
             <>
-              Stays on this device. Everything else — which model reads your posters, and who
+              Stays on this device{secretsAreEncrypted() ? ', encrypted' : ''}. Everything else — which model reads your posters, and who
               pays for it — is set by whoever runs {endpointHost(edited())}.
             </>
           )}
