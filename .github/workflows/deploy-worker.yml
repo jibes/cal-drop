@@ -78,17 +78,15 @@ jobs:
           {
             echo "### Shared endpoint deployed"
             echo
-            echo "Set this as the repository **variable** \`VITE_PROXY_URL\` (Settings →"
-            echo "Secrets and variables → Actions → Variables), remembering the \`/v1\`:"
+            echo "An OpenAI-compatible API of your own. In DropToCal's Settings, choose"
+            echo "*Other* as the provider and use this as the API address:"
             echo
             echo '```'
             echo "$DEPLOY_OUTPUT" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1 | sed 's|$|/v1|'
             echo '```'
             echo
-            echo "Then run the *Deploy to GitHub Pages* workflow so the site picks it up."
-            echo
             if [ "$HAS_ACCESS_CODE" = "true" ]; then
-              echo "An access code is set: each user must enter it as the API key in Settings."
+              echo "An access code is set: it goes in as the API key."
             else
               echo "No ACCESS_CODE secret is set, so anyone with this URL can spend your credits."
               echo "Add one as a repository secret and re-run to lock it down."

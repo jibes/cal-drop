@@ -1,4 +1,4 @@
-import { activeEndpoint, usingOwnApi } from './settings';
+import { activeEndpoint } from './settings';
 
 /**
  * Why a request never left the browser.
@@ -35,16 +35,16 @@ export interface Reached {
 const base = () => activeEndpoint().replace(/\/+$/, '');
 
 /**
- * A GET the endpoint answers without being asked for anything: the shared
- * one serves a test image, and every OpenAI-compatible API lists its models.
- * Neither needs a preflight, so a browser will send it where it will not yet
- * send a POST — which is the whole point of asking.
+ * A GET the API answers without being asked for anything: every
+ * OpenAI-compatible API lists its models. It needs no preflight, so a browser
+ * will send it where it will not yet send a POST — which is the whole point
+ * of asking.
  */
-const PUBLIC_GET = () => `${base()}${usingOwnApi() ? '/models' : '/test-image'}`;
+const PUBLIC_GET = () => `${base()}/models`;
 
 /** A POST shaped like the real one, to ask the question a GET cannot: will
- *  the preflight be answered? Both of these refuse the body; that is fine. */
-const PREFLIGHT_POST = () => `${base()}${usingOwnApi() ? '/chat/completions' : '/pricing'}`;
+ *  the preflight be answered? It refuses the body; that is fine. */
+const PREFLIGHT_POST = () => `${base()}/chat/completions`;
 
 /**
  * What an error answer says, in one line. A worker's own refusals are short
@@ -192,11 +192,12 @@ export function describeReach(found: Reached, host: string): string {
         'answering OPTIONS itself.'
       );
     case 'closed':
-      return usingOwnApi()
-        ? `${host} is answering, but not for ${location.origin}. It does not allow browsers to ` +
-          'call it directly — which most hosted APIs do not, since a key sent from a page is a ' +
-          'key given away. An endpoint of your own, or the shared one, can call it instead.'
-        : `${host} is answering, but not for ${location.origin}: its ALLOWED_ORIGINS does not list this site.`;
+      return (
+        `${host} is answering, but not for ${location.origin}. It does not allow browsers to ` +
+        'call it directly — which most hosted APIs do not, since a key sent from a page is a ' +
+        'key given away. The DropToCal app calls it itself and is not held to that; in a browser ' +
+        'it takes an API that allows this site, or a relay of your own in front of it.'
+      );
     case 'silent':
     default:
       return (

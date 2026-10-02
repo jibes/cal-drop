@@ -2,35 +2,21 @@ import type { LinkReader, Settings } from './types';
 
 const KEY = 'caldrop.settings.v1';
 
-/** The shared endpoint this build was given. Set at deploy time; see worker/. */
-/** "none" builds an app with no shared endpoint on purpose: own API only, as a public release is. */
-const configuredProxy = ((import.meta.env.VITE_PROXY_URL as string) || '').trim();
-export const proxyUrl = configuredProxy === 'none' ? '' : configuredProxy.replace(/\/+$/, '');
-
-/** Kept for the many places that only ever meant the shared endpoint. */
-export const endpoint = proxyUrl;
-
 /**
- * What to ask for before anyone has said otherwise.
- *
- * These are the two models the shared endpoint is configured with — see
- * MODEL and VISION_MODEL in worker/wrangler.toml — so pointing the app at the
- * relay in front of the same provider works without first having to know
- * what to type. They are a starting point and nothing more: an API of one's
- * own is somebody else's, and both fields are there to be changed.
+ * The shared endpoint earlier builds were given, which took an access code.
+ * There is no such thing any more — every build calls an API of its user's
+ * choosing — but that endpoint is an OpenAI-compatible API like any other, and
+ * the code works as its key. So settings from then become settings for it,
+ * and nobody who used one has to set anything up again.
  */
-// Only where there is a shared endpoint whose provider these are; a public
-// build knows nothing of anyone's provider, and the list comes from theirs.
-const DEFAULT_MODEL = proxyUrl ? 'gemma-4-31b' : '';
-const DEFAULT_VISION_MODEL = proxyUrl ? 'gemma-3-27b-it' : '';
+const RETIRED_ENDPOINT = 'https://caldrop-endpoint.sebastian-9fc.workers.dev/v1';
+const RETIRED_MODELS = { model: 'gemma-4-31b', visionModel: 'gemma-3-27b-it' };
 
 export const defaultSettings: Settings = {
-  method: proxyUrl ? 'proxy' : 'direct',
-  accessCode: '',
   apiBase: '',
   apiKey: '',
-  model: DEFAULT_MODEL,
-  visionModel: DEFAULT_VISION_MODEL,
+  model: '',
+  visionModel: '',
   pageReader: '',
   pageReaderCode: '',
   // Off until someone chooses a service that will see their links.
@@ -55,12 +41,12 @@ const clean = (value: unknown): string => (typeof value === 'string' ? value.tri
 
 /**
  * The fields that are worth something to whoever reads them: a key spends
- * money, a code lets someone else spend it. In the app they are kept in the
+ * money, a reader's code lets someone else use it. In the app they are kept in the
  * phone's keystore-encrypted store (SecureStore, see cal-drop-app), not in
  * localStorage, which is a plain file in the app's data. A browser has no
  * such store, and there they stay where they were — which Settings says.
  */
-const SECRETS = ['accessCode', 'apiKey', 'jinaKey', 'pageReaderCode'] as const;
+const SECRETS = ['apiKey', 'jinaKey', 'pageReaderCode'] as const;
 type Secret = (typeof SECRETS)[number];
 
 interface SecureStore {
@@ -92,14 +78,24 @@ export async function prepareSecrets(): Promise<void> {
     const found = {} as Record<Secret, string>;
     for (const name of SECRETS) found[name] = (await store.get({ name })).value ?? '';
 
+    // An access code kept here by an earlier build is the key to the retired
+    // endpoint now; see retired() below, which moves the rest.
+    const code = (await store.get({ name: 'accessCode' })).value ?? '';
+    if (code) {
+      const raw = localStorage.getItem(KEY);
+      const stored = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      if (stored.v !== SHAPE && stored.method !== 'direct') {
+        // The endpoint was what was in use, so its code is the key in use.
+        localStorage.setItem(KEY, JSON.stringify(retired(stored, code)));
+        await store.set({ name: 'apiKey', value: code });
+        found.apiKey = code;
+      }
+      await store.remove({ name: 'accessCode' });
+    }
+
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const stored = JSON.parse(raw) as Record<string, unknown>;
-      // Older builds kept the access code under apiKey, with no method at all.
-      if (stored.method === undefined && clean(stored.apiKey) && !clean(stored.accessCode)) {
-        stored.accessCode = stored.apiKey;
-        stored.apiKey = '';
-      }
+      const stored = upgraded(JSON.parse(raw) as Record<string, unknown>);
       let moved = false;
       for (const name of SECRETS) {
         const value = clean(stored[name]);
@@ -113,7 +109,7 @@ export async function prepareSecrets(): Promise<void> {
         }
       }
       // Only once every value is safely in the store does it leave localStorage.
-      if (moved) localStorage.setItem(KEY, JSON.stringify(stored));
+      if (moved || raw !== JSON.stringify(stored)) localStorage.setItem(KEY, JSON.stringify(stored));
     }
     secrets = found;
   } catch {
@@ -121,23 +117,51 @@ export async function prepareSecrets(): Promise<void> {
   }
 }
 
+/** Marks settings in today's shape, so they are never taken for an older one. */
+const SHAPE = 2;
+
+/**
+ * Settings written for the shared endpoint, as settings for that same
+ * endpoint called as an API of one's own: its address, the code as the key,
+ * and the two models it was configured with, which it answers to anyway.
+ */
+function retired(stored: Record<string, unknown>, code: string): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...stored, v: SHAPE, apiBase: RETIRED_ENDPOINT, apiKey: code };
+  delete out.method;
+  delete out.accessCode;
+  if (!clean(out.model)) out.model = RETIRED_MODELS.model;
+  if (!clean(out.visionModel)) out.visionModel = RETIRED_MODELS.visionModel;
+  return out;
+}
+
+/**
+ * Whatever an earlier build stored, in today's shape. The first builds kept
+ * the access code under apiKey and stored no method at all; later ones said
+ * 'proxy' or 'direct', and only 'direct' was already an API of one's own.
+ */
+function upgraded(stored: Record<string, unknown>): Record<string, unknown> {
+  if (stored.v === SHAPE) return stored;
+  const code =
+    stored.method === 'direct'
+      ? ''
+      : clean(stored.accessCode) || (stored.method === undefined ? clean(stored.apiKey) : '');
+  if (code) return retired(stored, code);
+  const out: Record<string, unknown> = { ...stored, v: SHAPE };
+  delete out.method;
+  delete out.accessCode;
+  return out;
+}
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return (inForce = { ...defaultSettings, ...(secrets ?? {}) });
-    const stored = JSON.parse(raw) as Partial<Settings> & { apiKey?: string };
-    // Older builds stored the access code in a field called apiKey, and knew
-    // of no method at all — those settings are a proxy's, whatever they hold.
-    const legacy = stored.method === undefined;
+    const stored = upgraded(JSON.parse(raw) as Record<string, unknown>) as Partial<Settings>;
     const settings: Settings = {
-      method: stored.method === 'direct' ? 'direct' : 'proxy',
-      accessCode: clean(stored.accessCode) || (legacy ? clean(stored.apiKey) : ''),
       apiBase: clean(stored.apiBase).replace(/\/+$/, ''),
-      apiKey: legacy ? '' : clean(stored.apiKey),
-      // Absent and empty are different answers: a field that was never
-      // stored takes the default, one deliberately cleared stays cleared.
-      model: stored.model === undefined ? DEFAULT_MODEL : clean(stored.model),
-      visionModel: stored.visionModel === undefined ? DEFAULT_VISION_MODEL : clean(stored.visionModel),
+      apiKey: clean(stored.apiKey),
+      model: clean(stored.model),
+      visionModel: clean(stored.visionModel),
       pageReader: clean(stored.pageReader).replace(/\/+$/, ''),
       pageReaderCode: clean(stored.pageReaderCode),
       // Settings from before the choice existed: a reader address means
@@ -156,23 +180,19 @@ export function loadSettings(): Settings {
   }
 }
 
-/** Nothing worth storing at all — so nothing is stored. */
-/** Nothing anyone chose — only what this build starts with. */
+/** Nothing anyone chose — so nothing is stored. */
 const empty = (s: Settings): boolean =>
-  !s.accessCode.trim() &&
   !s.apiBase.trim() &&
   !s.apiKey.trim() &&
   !s.pageReader.trim() &&
   !s.pageReaderCode.trim() &&
   s.linkReader === 'off' &&
   !s.jinaKey.trim() &&
-  s.model.trim() === DEFAULT_MODEL &&
-  s.visionModel.trim() === DEFAULT_VISION_MODEL;
+  !s.model.trim() &&
+  !s.visionModel.trim();
 
 export function saveSettings(s: Settings): void {
   const settings: Settings = {
-    method: s.method,
-    accessCode: s.accessCode.trim(),
     apiBase: s.apiBase.trim().replace(/\/+$/, ''),
     apiKey: s.apiKey.trim(),
     model: s.model.trim(),
@@ -199,8 +219,8 @@ export function saveSettings(s: Settings): void {
     for (const name of SECRETS) delete plain[name];
   }
   try {
-    if (empty(settings) && settings.method === defaultSettings.method) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify(plain));
+    if (empty(settings)) localStorage.removeItem(KEY);
+    else localStorage.setItem(KEY, JSON.stringify({ v: SHAPE, ...plain }));
   } catch {
     /* private mode / storage disabled — settings just don't persist */
   }
@@ -213,6 +233,7 @@ export function resetSettings(): Settings {
       secrets[name] = '';
       void store.remove({ name }).catch(() => undefined);
     }
+    void store.remove({ name: 'accessCode' }).catch(() => undefined);
   }
   try {
     localStorage.removeItem(KEY);
@@ -224,55 +245,33 @@ export function resetSettings(): Settings {
 
 export const settingsInForce = (): Settings => inForce;
 
-export const usingOwnApi = (s: Settings = inForce): boolean => s.method === 'direct';
-
 /**
  * Where a chat request goes. An OpenAI-compatible base is given as far as
  * /v1, and the path is added like any client would.
  */
 export function activeEndpoint(s: Settings = inForce): string {
-  return usingOwnApi(s) ? s.apiBase.trim().replace(/\/+$/, '') : proxyUrl;
+  return s.apiBase.trim().replace(/\/+$/, '');
 }
 
-/**
- * The shared endpoint, when it is the one in use.
- *
- * Reading a link, and handing a phone a calendar over https, are things the
- * endpoint does besides passing on chat requests. Somebody's own OpenAI API
- * has no such routes, so this is empty there and those features say so
- * rather than calling a URL that was never going to answer.
- */
-export function proxyEndpoint(s: Settings = inForce): string {
-  return usingOwnApi(s) ? '' : proxyUrl;
-}
-
-/** Whatever goes in the Authorization header: an access code, or a real key. */
-export const authSecret = (s: Settings = inForce): string =>
-  (usingOwnApi(s) ? s.apiKey : s.accessCode).trim();
+/** What goes in the Authorization header. */
+export const authSecret = (s: Settings = inForce): string => s.apiKey.trim();
 
 /**
- * Which model to ask for, or '' to let the endpoint decide.
+ * Which model to ask for.
  *
- * Two are needed, because one model rarely does both well and several do only
- * one at all: the text model reads a pasted programme, and a picture goes to
- * whichever model accepts pictures. The shared endpoint makes that choice
- * itself — it is half of what it is for — so it is asked for nothing; with an
- * API of one's own there is nobody else to decide. Naming only one is a
- * perfectly good answer where the same model reads both.
+ * Two can be named, because one model rarely does both well and several do
+ * only one at all: the text model reads a pasted programme, and a picture
+ * goes to whichever model accepts pictures. Naming only one is a perfectly
+ * good answer where the same model reads both.
  */
 export const wantedModel = (forImage = false, s: Settings = inForce): string => {
-  if (!usingOwnApi(s)) return '';
   const vision = s.visionModel.trim();
   return forImage && vision ? vision : s.model.trim();
 };
 
 /**
- * Who reads a link when the device cannot, and what to present when asking.
- *
- * With the shared endpoint it reads links itself, as it always has — unless a
- * server of one's own was given, which is the only reader that exists in
- * every arrangement. With an API of one's own it is whatever was chosen, and
- * by default nobody: a link is a thing a service gets to see.
+ * Who reads a link in a browser, and what to present when asking: whatever
+ * was chosen, and by default nobody — a link is a thing a service gets to see.
  */
 export type PageReader =
   | { kind: 'none' }
@@ -281,14 +280,9 @@ export type PageReader =
 
 export function pageReader(s: Settings = inForce): PageReader {
   const server = s.pageReader.trim().replace(/\/+$/, '');
-  if (usingOwnApi(s)) {
-    if (s.linkReader === 'jina') return { kind: 'jina', key: s.jinaKey.trim() };
-    if (s.linkReader === 'server' && server) return { kind: 'server', url: server, code: s.pageReaderCode.trim() };
-    return { kind: 'none' };
-  }
-  if (server) return { kind: 'server', url: server, code: s.pageReaderCode.trim() };
-  const shared = proxyEndpoint(s);
-  return shared ? { kind: 'server', url: shared, code: authSecret(s) } : { kind: 'none' };
+  if (s.linkReader === 'jina') return { kind: 'jina', key: s.jinaKey.trim() };
+  if (s.linkReader === 'server' && server) return { kind: 'server', url: server, code: s.pageReaderCode.trim() };
+  return { kind: 'none' };
 }
 
 /** Host shown in Settings, so what the app talks to is never a guess. */

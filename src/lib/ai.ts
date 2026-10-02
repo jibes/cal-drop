@@ -1,4 +1,4 @@
-import { activeEndpoint, authSecret, usingOwnApi, wantedModel } from './settings';
+import { activeEndpoint, authSecret, wantedModel } from './settings';
 import { shrinkFurther } from './image';
 import { canFetchNatively, nativeFetch } from './native';
 import {
@@ -322,11 +322,9 @@ export interface ExtractOptions {
   onNote?: (note: string) => void;
 }
 
-const NO_ENDPOINT = usingOwnApi()
-  ? 'No API address is set. Settings has a place for the base URL of an ' +
-    'OpenAI-compatible API — the part ending in /v1 — along with your key.'
-  : 'This build has no endpoint configured, so there is nothing for it to call. ' +
-    'VITE_PROXY_URL was empty when it was built.';
+const NO_ENDPOINT =
+  'No API address is set. Settings has a place for the base URL of an ' +
+  'OpenAI-compatible API — the part ending in /v1 — along with your key.';
 
 const chatUrl = () => {
   const base = activeEndpoint();
@@ -783,26 +781,14 @@ export function requestBody(
 ) {
   const rung = LADDER[attempt] ?? LADDER[LADDER.length - 1];
   const model = wantedModel(carriesImage(content));
-  /**
-   * The allowance, the temperature and how much to think. For an API of one's
-   * own they are whatever it has shown it accepts (params.ts); the shared
-   * endpoint takes max_tokens and decides the reasoning itself.
-   */
-  const tuned = usingOwnApi()
-    ? tuning(quirks, carriesImage(content) ? null : cap, rung.temperature)
-    : {
-        ...(carriesImage(content) ? {} : { max_tokens: cap }),
-        ...(rung.temperature ? { temperature: 0 } : {}),
-      };
+  /** The allowance, the temperature and how much to think: whatever this API
+   *  has shown it accepts (params.ts). */
+  const tuned = tuning(quirks, carriesImage(content) ? null : cap, rung.temperature);
   return {
     /**
-     * A model is named only where naming one is the caller's job. The shared
-     * endpoint chooses — that is half of what it is for, and sending a name
-     * would override a choice made by whoever pays for it. Somebody's own API
-     * has no such opinion and will refuse a request that does not say.
-     *
-     * Which of the two depends on what is being sent: a picture goes to
-     * whichever model takes pictures, and plenty take none at all.
+     * An API refuses a request that names no model. Which of the two depends
+     * on what is being sent: a picture goes to whichever model takes
+     * pictures, and plenty take none at all.
      */
     ...(model ? { model } : {}),
     //
@@ -877,7 +863,7 @@ async function callModel(
    * model, and the ladder would take that for four different rungs failing
    * and try all of them — four refusals saying the same thing.
    */
-  if (usingOwnApi() && !wantedModel(carriesImage(content))) {
+  if (!wantedModel(carriesImage(content))) {
     throw new Error(
       carriesImage(content)
         ? 'No model is named for photos. Settings needs one that accepts pictures.'
@@ -908,12 +894,11 @@ async function callModel(
   }
 
   /**
-   * An API of one's own, asked from the app, is asked by the app itself: the
-   * rule that stops a page calling an API that allows no browsers is the
-   * browser's, and most hosted APIs allow none. The shared endpoint allows
-   * this page, and a browser has no other way.
+   * Asked from the app, the API is asked by the app itself: the rule that
+   * stops a page calling an API that allows no browsers is the browser's,
+   * and most hosted APIs allow none. A browser has no other way.
    */
-  const native = usingOwnApi() && canFetchNatively();
+  const native = canFetchNatively();
   let res: Response;
   try {
     res = await (native ? nativeFetch : fetch)(chatUrl(), {
@@ -948,10 +933,10 @@ async function callModel(
     let message = '';
     message = complaint(whole) || complaint(detail);
     // One parameter named as the trouble is worth asking again without.
-    const refused = usingOwnApi() ? refusedParam(res.status, whole, sent) : null;
+    const refused = refusedParam(res.status, whole, sent);
     if (refused) throw new ParamRefused(refused, message || `The API refused ${refused}.`);
     if (res.status === 401 || res.status === 403) {
-      throw new Error(message || 'Wrong or missing access code. Enter it in Settings.');
+      throw new Error(message || 'The API refused the key. Check it in Settings.');
     }
     if (res.status === 429 || res.status === 500) throw new Error(message || `HTTP ${res.status}`);
     // Not every server takes tools, a response_format or a system turn, and
@@ -1017,7 +1002,7 @@ async function runPass(
   /** What this API and model have shown they accept; see params.ts. */
   const api = activeEndpoint();
   const model = wantedModel(shape === 'image');
-  let quirks = usingOwnApi() ? rememberedQuirks(api, model) : FRESH;
+  let quirks = rememberedQuirks(api, model);
   let adjustments = 0;
 
   for (const attempt of rungOrder(shape)) {
@@ -1081,7 +1066,7 @@ async function runPass(
           const parsed = parseJson(answer.text);
           rememberRung(shape, attempt);
           rememberCap(shape, cap);
-          if (usingOwnApi()) rememberQuirks(api, model, quirks);
+          rememberQuirks(api, model, quirks);
           const events = Array.isArray(parsed.events) ? parsed.events : [];
           return events.map(toDraft).filter((e) => e.startDate);
         } catch (err) {

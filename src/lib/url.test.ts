@@ -4,8 +4,6 @@ import type { Settings } from './types';
 import { fetchPageText } from './url';
 
 const own: Settings = {
-  method: 'direct',
-  accessCode: '',
   apiBase: 'https://api.example.test/v1',
   apiKey: 'sk-test',
   model: 'test-model',
@@ -87,10 +85,22 @@ describe('reading a link with an API of one’s own', () => {
   });
 });
 
-describe('reading a link through the shared endpoint', () => {
-  it('still asks the endpoint, as before', () => {
-    const s = { ...own, method: 'proxy' as const, accessCode: 'code' };
-    // The test build has no endpoint baked in, so only a server of one's own remains.
-    expect(pageReader({ ...s, pageReader: 'https://reader.test' })).toEqual({ kind: 'server', url: 'https://reader.test', code: '' });
+describe('reading a link through a reader of one’s own', () => {
+  it('calls it the way Jina is called, with its key and without Jina’s header', async () => {
+    const s = { ...own, linkReader: 'server' as const, pageReader: 'https://reader.test/', pageReaderCode: 'c' };
+    saveSettings(s);
+    const fetch = vi.fn(async () => new Response('Concert, Friday 9 October 2026, 20:00', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(fetchPageText('https://example.com/event?id=3', s)).resolves.toContain('9 October 2026');
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://reader.test/https://example.com/event?id=3');
+    expect(init.headers).toEqual({ Accept: 'text/plain', Authorization: 'Bearer c' });
+  });
+
+  it('passes on what it says when it cannot read the page', async () => {
+    const s = { ...own, linkReader: 'server' as const, pageReader: 'https://reader.test' };
+    saveSettings(s);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('That address is on a private network.', { status: 400 })));
+    await expect(fetchPageText('https://example.com/event', s)).rejects.toThrow(/reader.test could not read that page \(HTTP 400\): That address/);
   });
 });

@@ -33,51 +33,84 @@ beforeEach(() => {
     getItem: (k: string) => local.get(k) ?? null,
     setItem: (k: string, v: string) => void local.set(k, v),
     removeItem: (k: string) => void local.delete(k),
+    clear: () => local.clear(),
   });
 });
 afterEach(() => vi.unstubAllGlobals());
 
+const RETIRED = 'https://caldrop-endpoint.sebastian-9fc.workers.dev/v1';
+
+describe('settings from the shared endpoint', () => {
+  it('become that endpoint as an API of one’s own, the code its key', async () => {
+    // How a phone looks after a build that kept the code encrypted.
+    local.set(KEY, JSON.stringify({ method: 'proxy', model: '' }));
+    vault.set('accessCode', 'code-123');
+    fakeStore();
+    const s = await settingsModule();
+    await s.prepareSecrets();
+    expect(s.loadSettings()).toMatchObject({
+      apiBase: RETIRED,
+      apiKey: 'code-123',
+      model: 'gemma-4-31b',
+      visionModel: 'gemma-3-27b-it',
+    });
+    expect(vault.get('apiKey')).toBe('code-123');
+    expect(vault.has('accessCode')).toBe(false);
+    expect(local.get(KEY)).not.toContain('code-123');
+    expect(JSON.parse(local.get(KEY)!)).not.toHaveProperty('method');
+  });
+
+  it('do the same from localStorage, and from the very first shape, the code under apiKey', async () => {
+    for (const stored of [{ method: 'proxy', accessCode: 'code-123' }, { apiKey: 'code-123' }]) {
+      local.clear();
+      vault.clear();
+      local.set(KEY, JSON.stringify(stored));
+      fakeStore();
+      const s = await settingsModule();
+      await s.prepareSecrets();
+      expect(s.loadSettings()).toMatchObject({ apiBase: RETIRED, apiKey: 'code-123' });
+      expect(local.get(KEY)).not.toContain('code-123');
+    }
+  });
+
+  it('leave an API of one’s own as it was', async () => {
+    local.set(KEY, JSON.stringify({ method: 'direct', apiBase: 'https://api.example.test/v1', model: 'm' }));
+    vault.set('apiKey', 'sk-own');
+    vault.set('accessCode', 'old-code');
+    fakeStore();
+    const s = await settingsModule();
+    await s.prepareSecrets();
+    expect(s.loadSettings()).toMatchObject({ apiBase: 'https://api.example.test/v1', apiKey: 'sk-own', model: 'm' });
+    expect(vault.has('accessCode')).toBe(false);
+  });
+
+  it('are moved once: today’s settings are never taken for the first shape', async () => {
+    const s = await settingsModule();
+    s.saveSettings({ ...s.loadSettings(), apiBase: 'https://api.example.test/v1', apiKey: 'sk-browser' });
+    expect(s.loadSettings()).toMatchObject({ apiBase: 'https://api.example.test/v1', apiKey: 'sk-browser' });
+  });
+});
+
 describe('secrets in the app', () => {
-  it('moves an access code out of localStorage into the encrypted store', async () => {
-    local.set(KEY, JSON.stringify({ method: 'proxy', accessCode: 'code-123', model: 'm' }));
-    fakeStore();
-    const s = await settingsModule();
-    await s.prepareSecrets();
-    expect(vault.get('accessCode')).toBe('code-123');
-    expect(JSON.parse(local.get(KEY)!)).not.toHaveProperty('accessCode');
-    expect(s.loadSettings().accessCode).toBe('code-123');
-    expect(s.secretsAreEncrypted()).toBe(true);
-  });
-
-  it('moves the very old shape too, where the access code sat under apiKey', async () => {
-    local.set(KEY, JSON.stringify({ apiKey: 'old-code' }));
-    fakeStore();
-    const s = await settingsModule();
-    await s.prepareSecrets();
-    expect(vault.get('accessCode')).toBe('old-code');
-    expect(vault.has('apiKey')).toBe(false);
-    expect(s.loadSettings()).toMatchObject({ accessCode: 'old-code', apiKey: '' });
-  });
-
   it('saves a key to the store and never to localStorage', async () => {
     const store = fakeStore();
     const s = await settingsModule();
     await s.prepareSecrets();
-    s.saveSettings({ ...s.loadSettings(), method: 'direct', apiBase: 'https://api.example.test/v1', apiKey: 'sk-secret' });
+    s.saveSettings({ ...s.loadSettings(), apiBase: 'https://api.example.test/v1', apiKey: 'sk-secret' });
     await Promise.resolve();
     expect(store.set).toHaveBeenCalledWith({ name: 'apiKey', value: 'sk-secret' });
     expect(local.get(KEY)).not.toContain('sk-secret');
-    expect(JSON.parse(local.get(KEY)!)).toMatchObject({ method: 'direct', apiBase: 'https://api.example.test/v1' });
+    expect(JSON.parse(local.get(KEY)!)).toMatchObject({ apiBase: 'https://api.example.test/v1' });
   });
 
   it('works as before when the store fails', async () => {
-    local.set(KEY, JSON.stringify({ method: 'proxy', accessCode: 'code-123' }));
+    local.set(KEY, JSON.stringify({ apiBase: 'https://api.example.test/v1', apiKey: 'sk-1', v: 2 }));
     fakeStore(true);
     const s = await settingsModule();
     await s.prepareSecrets();
     expect(s.secretsAreEncrypted()).toBe(false);
-    expect(s.loadSettings().accessCode).toBe('code-123');
-    expect(local.get(KEY)).toContain('code-123');
+    expect(s.loadSettings().apiKey).toBe('sk-1');
+    expect(local.get(KEY)).toContain('sk-1');
   });
 
   it('clears the store with everything else', async () => {
@@ -96,7 +129,7 @@ describe('secrets in a browser', () => {
     const s = await settingsModule();
     await s.prepareSecrets();
     expect(s.secretsAreEncrypted()).toBe(false);
-    s.saveSettings({ ...s.loadSettings(), method: 'direct', apiKey: 'sk-browser' });
+    s.saveSettings({ ...s.loadSettings(), apiKey: 'sk-browser' });
     expect(local.get(KEY)).toContain('sk-browser');
   });
 });

@@ -15,6 +15,8 @@ import { build } from 'esbuild';
 
 const BASE = (process.env.CALDROP_BASE_URL || '').replace(/\/+$/, '');
 const KEY = process.env.CALDROP_ACCESS_CODE || process.env.CALDROP_API_KEY || '';
+// The app always names a model; the shared endpoint replaces it with its own.
+const MODEL = process.env.CALDROP_MODEL || 'gemma-4-31b';
 const URL_ = BASE.endsWith('/chat/completions') ? BASE : `${BASE}/chat/completions`;
 
 if (!BASE) {
@@ -193,17 +195,18 @@ try {
 // 6 — the real thing: DropToCal's own extraction, bundled straight from src
 console.log("\n6. DropToCal's own extraction path (real prompt, real parsing)");
 const bundled = await build({
-  entryPoints: ['src/lib/ai.ts'],
+  stdin: {
+    contents: "export { extractEvents } from './src/lib/ai'; export { saveSettings } from './src/lib/settings';",
+    resolveDir: process.cwd(),
+    loader: 'ts',
+  },
   bundle: true,
   format: 'esm',
   write: false,
   platform: 'neutral',
   logLevel: 'error',
-  // ai.ts reads the endpoint from the build-time environment, exactly as the
-  // browser bundle does; point that at whatever is being probed.
-  define: { 'import.meta.env.VITE_PROXY_URL': JSON.stringify(BASE) },
 });
-const { extractEvents } = await import(
+const { extractEvents, saveSettings } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`
 );
 
@@ -215,9 +218,15 @@ Eintritt frei
 Jeden Dienstag: Jam Session, 21 Uhr, Bar Zwei`;
 
 try {
+  // As the app does it: the settings in force are what is called.
+  const settings = {
+    apiBase: BASE, apiKey: KEY, model: MODEL, visionModel: '',
+    pageReader: '', pageReaderCode: '', linkReader: 'off', jinaKey: '',
+  };
+  saveSettings(settings);
   const events = await extractEvents(
     { kind: 'text', label: 'probe poster', images: [], text: POSTER },
-    { accessCode: KEY },
+    settings,
     { onProgress: ({ title }) => title && process.stdout.write(`\r  …streaming: ${title.slice(0, 50)}`) },
   );
   process.stdout.write(`\r${' '.repeat(72)}\r`);

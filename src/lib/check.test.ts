@@ -3,8 +3,6 @@ import { checkConnection, listModels } from './check';
 import type { Settings } from './types';
 
 const own: Settings = {
-  method: 'direct',
-  accessCode: '',
   apiBase: 'https://api.example.test/v1',
   apiKey: 'sk-test',
   model: 'text-model',

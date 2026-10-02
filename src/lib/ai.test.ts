@@ -3,13 +3,11 @@
  * ones do. Nothing leaves the machine: fetch is replaced for each test.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { extractEvents, requestBody } from './ai';
+import { extractEvents } from './ai';
 import { saveSettings } from './settings';
 import type { ExtractionSource, Settings } from './types';
 
 const own: Settings = {
-  method: 'direct',
-  accessCode: '',
   apiBase: 'https://api.example.test/v1',
   apiKey: 'sk-test',
   model: 'test-model',
@@ -134,16 +132,5 @@ describe('an API of one’s own', () => {
   it('still reports a refusal that no parameter explains', async () => {
     api(() => new Response(JSON.stringify({ error: { message: 'Model not found: test-model' } }), { status: 404 }));
     await expect(extractEvents(source, own)).rejects.toThrow(/Model not found/);
-  });
-});
-
-describe('the shared endpoint', () => {
-  it('is asked exactly as before: max_tokens, and no reasoning_effort from the app', () => {
-    saveSettings({ ...own, method: 'proxy', accessCode: 'code' });
-    const body = requestBody('text to read', 0, true, 16000);
-    expect(body).toMatchObject({ max_tokens: 16000, temperature: 0 });
-    expect('max_completion_tokens' in body).toBe(false);
-    expect('reasoning_effort' in body).toBe(false);
-    expect('model' in body).toBe(false);
   });
 });

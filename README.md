@@ -4,7 +4,8 @@ Point it at an event poster — a photo, a screenshot, a PDF or a link — and g
 calendar file back. An OpenAI-compatible model reads the dates; you check them; the
 app writes the `.ics`.
 
-Everything runs in the browser. There is no backend.
+Everything runs in the browser, or in the app. There is no backend: it calls
+an OpenAI-compatible API of your choosing, with your own key.
 
 The whole point is the step count. Share a poster in, glance at one line, tap
 Add — the calendar app opens with the event already filled in.
@@ -51,15 +52,16 @@ paste / drop ───┘                                │                    
   pipeline; elsewhere it is a video frame, and the app says so if that comes
   out too soft to read. The system camera stays one tap away inside the
   viewfinder, and is used outright where `getUserMedia` is unavailable.
-- **Three ways into a calendar, none of them preferred**: the calendar file
-  served inline over https, a Google deep link and an Outlook one.
+- **Three ways into a calendar, none of them preferred**: the calendar file,
+  a Google deep link and an Outlook one.
 
   A web page cannot put an event straight into a phone's calendar app on
   Android. Chromium adds `CATEGORY_BROWSABLE` to any intent a page launches,
   and a calendar app's `ACTION_INSERT` filter does not declare it, so such an
   intent matches nothing at all. The file is the only handover a browser is
-  permitted to make, and which app receives it is the device's default. A
-  native build has no such limit — that is one of the things it buys.
+  permitted to make — a download, which the device then opens with whatever
+  it has. The app has no such limit and hands the event to the calendar
+  itself; that is one of the things it buys.
 - **Verification is a glance, not a re-read.** Every event shows the verbatim
   words the date was read from — *read from "Sa 12.09. — Beginn 20 Uhr"* — so
   checking it against the poster takes a second.
@@ -69,9 +71,11 @@ paste / drop ───┘                                │                    
 - **Photos and screenshots** are downscaled to 1600px and sent as `image_url` parts.
 - **PDFs** are read with `pdfjs-dist`; when a PDF carries almost no text layer (a scan,
   or a poster with outlined type) its pages are rendered and sent as images instead.
-- **Links** are read by the endpoint, not the browser: it fetches the page,
-  strips it to text and hands that back. No CORS proxy to configure, and no
-  third party sees the links people paste.
+- **Links** are read by the phone itself in the app. A browser may not fetch
+  another site, so on the web a link is read by whichever reader is chosen in
+  Settings — Jina Reader, or a reader of your own called the same way
+  (`fetcher/` is one) — and by nobody until one is chosen, since a reader sees
+  the link.
 - **Two passes**: anything with a text layer gets a cheap text-only pass first;
   the images are only sent if that finds nothing.
 - **Structured output** via tool calling against a JSON Schema, with a
@@ -102,28 +106,19 @@ find the poster again. So it is also a target.
 
 ## Configuration
 
-There is one setting in the app: an **access code**. Everything else is a
-property of the deployment, not a choice to put in front of someone holding a
-poster.
+Everything is in Settings, and nothing is built in:
 
-| Decision | Where it lives |
+| Setting | What it is |
 | --- | --- |
-| Which endpoint the app calls | `VITE_PROXY_URL`, committed in `.env.production` |
-| Which model reads the posters | `MODEL` in `worker/wrangler.toml` |
-| Which key pays for it | `OPENAI_API_KEY`, a Worker secret |
-| Who may call it | `ACCESS_CODE` secret + `ALLOWED_ORIGINS` |
-| How often | `DAILY_LIMIT` per IP |
+| Provider, API address | Any OpenAI-compatible API, up to `/v1`. OpenAI, OpenRouter, Groq and Mistral are listed; anything else is typed in. |
+| API key | Yours. In the app it is kept in the phone's encrypted store; in a browser, in that browser. |
+| Model, model for photos | Offered from the API's own list. One model is enough if it reads pictures. |
+| Links (web only) | Not read, Jina Reader, or a reader of your own. |
 
-The endpoint URL is not a secret — it is inlined into the public bundle, and
-anyone who opens the app can read it. The access code is, which is why it is
-never built in: each person enters it once and it stays in their browser.
-
-The endpoint ignores whatever model the page asks for and substitutes its own,
-so there is exactly one answer to "which model answered this", and no caller can
-spend the operator's credits on something more expensive.
-
-Forking works the same way: point `VITE_PROXY_URL` at your own worker, set its
-`MODEL` and `UPSTREAM_URL`, and the app follows.
+There used to be a shared endpoint with an access code in front of it. It is
+gone from the app; `worker/` remains, and is now simply one more
+OpenAI-compatible API you can run for yourself — its access code is the key.
+Settings saved for it carry over as exactly that.
 
 ## "Failed to fetch"
 
@@ -149,8 +144,9 @@ ways out:
 
 1. Enable CORS for your origin on the API, if you control it.
 2. Use a provider that allows browser calls.
-3. Put `worker/` in front of it — it answers the preflight, adds the headers and
-   keeps the key server-side. This is what it is for.
+3. Put `worker/` (or `relay/`) in front of it — it answers the preflight, adds
+   the headers and keeps the key server-side.
+4. Use the app, which calls the API itself and is not held to any of this.
 
 ## Check an endpoint before trusting it
 

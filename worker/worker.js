@@ -57,8 +57,11 @@ function reasoningAskedFor(body) {
 function askedFor(body, model) {
   const out = { model, ...reasoningAskedFor(body) };
   for (const key of FORWARDED) if (body[key] !== undefined) out[key] = body[key];
-  if (body.max_tokens !== undefined) {
-    const wanted = Number(body.max_tokens);
+  // Either name, as clients send one or the other; upstream it is max_tokens,
+  // which every provider behind this takes, and never past the ceiling.
+  const asked = body.max_tokens ?? body.max_completion_tokens;
+  if (asked !== undefined) {
+    const wanted = Number(asked);
     if (Number.isFinite(wanted) && wanted > 0) out.max_tokens = Math.min(wanted, MAX_TOKENS_CEILING);
   }
   return out;

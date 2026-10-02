@@ -42,6 +42,8 @@ worker that is already deployed, so re-run the workflow afterwards.
 
 ## Its one route
 
-`POST /fetch`, a JSON body of `{"url": "https://…"}`, answered with
-`{"text": "…"}` — the same shape the endpoint's own `/fetch` uses, so the app
-speaks to either without knowing which.
+`GET /<link>` — for example `/https://example.com/event?id=3` — answered with
+the page's text as `text/plain`, the access code as `Authorization: Bearer`.
+That is how Jina Reader (`r.jina.ai`) is called, so the web app asks either
+the same way: in Settings → Links → *My own reader*, with this worker's
+address and its code.

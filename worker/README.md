@@ -1,7 +1,14 @@
-# DropToCal shared endpoint
+# DropToCal endpoint
 
 A small Cloudflare Worker that fronts an OpenAI-compatible API so DropToCal can
-call it from a web page. It exists for two reasons:
+call it from a web page.
+
+The app no longer knows about it: there is no shared endpoint and no access
+code in Settings any more. To DropToCal this is now one more OpenAI-compatible
+API, entered like any other — its address up to `/v1`, its access code as the
+key. Settings saved for it as the shared endpoint carry over as exactly that.
+It still picks the model itself, whatever the app names. It exists for two
+reasons:
 
 1. **CORS.** Most inference endpoints never answer the browser's preflight, so a
    page calling them directly fails with `Failed to fetch`. This worker answers
@@ -54,7 +61,7 @@ Settings → Secrets and variables → Actions → Secrets:
 | `ACCESS_CODE` | A shared code callers must present. **Without it the endpoint refuses to serve anything** (503), because an endpoint with no code is an open door onto your API bill that fails silently. To run one open on purpose, set the var `ALLOW_NO_CODE = "yes"` |
 
 Then Actions → *Deploy shared endpoint* → **Run workflow**. The run summary
-prints the endpoint URL to use for `VITE_PROXY_URL`.
+prints the address to enter in DropToCal's Settings.
 
 ## Deploy from a terminal
 
@@ -64,13 +71,9 @@ npx wrangler deploy
 npx wrangler secret put OPENAI_API_KEY     # the upstream key, e.g. your Melious key
 ```
 
-Then rebuild the site pointing at it — as a GitHub Actions repository *variable*
-(Settings → Secrets and variables → Actions → Variables), not a secret, since it
-is a public URL:
-
-```
-VITE_PROXY_URL = https://caldrop-endpoint.<subdomain>.workers.dev/v1
-```
+Then enter it in DropToCal's Settings as an API of your own: provider
+*Other*, the address `https://caldrop-endpoint.<subdomain>.workers.dev/v1`,
+and the access code as the key.
 
 The model is not named here: the endpoint picks it, so there is one place to
 change it and no way for a caller to override it.

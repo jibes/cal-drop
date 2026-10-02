@@ -1,6 +1,5 @@
-import { requestBody, type ContentPart } from './ai';
 import { describeReach, reachEndpoint } from './reach';
-import { activeEndpoint, authSecret, proxyEndpoint, proxyUrl, usingOwnApi, wantedModel } from './settings';
+import { activeEndpoint, authSecret, wantedModel } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -12,7 +11,6 @@ import type { Settings } from './types';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mO4Y2OEFTEMLQkAZyhSgVTvwmkAAAAASUVORK5CYII=';
 const DATA_URL = `data:image/png;base64,${PNG_B64}`;
-const HOSTED = proxyUrl ? proxyUrl.replace(/\/+$/, '') + '/test-image' : '';
 
 const ASK = 'Reply with the single word OK.';
 const LOOK = 'What colour is this image? One word.';
@@ -46,14 +44,6 @@ const PROBES: Probe[] = [
     body: {
       messages: [
         { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: DATA_URL } }] },
-      ],
-    },
-  },
-  {
-    name: 'image: image_url {url: https:}',
-    body: {
-      messages: [
-        { role: 'user', content: [{ type: 'text', text: LOOK }, { type: 'image_url', image_url: { url: HOSTED } }] },
       ],
     },
   },
@@ -247,177 +237,15 @@ function answerIn(raw: string): string {
   }
 }
 
-/**
- * The models worth asking, by the names providers give vision models — minus
- * the ones whose names look similar for unrelated reasons: an image generator,
- * a speech model and an embedding model all fail this test for no useful
- * reason, and each wasted attempt costs a request against the quota.
- */
-function visionCandidates(models: string[]): string[] {
-  const looksVision = /(^|[-.])vl([-.]|$)|vision|pixtral|gemma-[34]/i;
-  const notAReader = /embed|whisper|flux|guard|bge-|e5-|image$|-image|paraphrase/i;
-  return models.filter((id) => looksVision.test(id) && !notAReader.test(id)).slice(0, 6);
-}
-
-/** A poster-sized picture, because an image's token cost scales with its size
- *  and a tiny test pixel would measure nothing the app ever sends. */
-function posterSizedImage(): string {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 1600;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return DATA_URL;
-  ctx.fillStyle = '#123'; ctx.fillRect(0, 0, 1200, 1600);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 90px sans-serif';
-  ctx.fillText('SOMMERFEST', 80, 400);
-  ctx.font = '54px sans-serif';
-  ctx.fillText('Sa 12.09. — 20 Uhr', 80, 520);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
-
-const SAMPLE_POSTER = `SOMMERFEST IM HOF
-Sa 12.09. — Einlass 19:00, Beginn 20 Uhr
-Kulturzentrum Alte Feuerwache, Berlin
-Eintritt frei
-
-Jeden Dienstag: Jam Session, 21 Uhr, Bar Zwei`;
-
-interface Usage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-}
-
-/**
- * Token counts, from wherever the answer put them. A server may stream even
- * when not asked to, in which case the usage rides on one of the events rather
- * than sitting in a JSON body.
- */
-function readUsage(raw: string): Usage | undefined {
-  try {
-    const whole = JSON.parse(raw) as { usage?: Usage };
-    if (whole.usage) return whole.usage;
-  } catch {
-    /* not a single JSON body; try it as a stream */
-  }
-  for (const line of raw.split('\n')) {
-    if (!line.trim().startsWith('data:')) continue;
-    try {
-      const event = JSON.parse(line.trim().slice(5).trim()) as { usage?: Usage };
-      if (event.usage?.prompt_tokens) return event.usage;
-    } catch {
-      /* [DONE] and keep-alives are not JSON */
-    }
-  }
-  return undefined;
-}
-
-const money = (euros: number) =>
-  euros >= 0.01 ? `€${euros.toFixed(3)}` : `${(euros * 100).toFixed(4)} cents`;
-
-/** Without grouping, because a thousand separator reads as a decimal point to
- *  half the world and the figure beside it is a decimal. */
-const plainCount = (n: number) => n.toLocaleString('en-US', { useGrouping: false });
-
-/**
- * What a run actually costs, measured rather than estimated: one real
- * extraction of each kind, with the token counts the provider reports and the
- * prices the endpoint is configured with. Estimating image tokens in
- * particular is guesswork — pan-and-scan means one photo can be several crops.
- */
-async function measureCost(emit: (line: string) => void, auth: Record<string, string>): Promise<void> {
-  // Prices are something the shared endpoint is configured with; an API of
-  // one's own bills directly and says nothing here.
-  const base = proxyEndpoint().replace(/\/+$/, '');
-  if (!base) return;
-
-  let prices: {
-    model?: string;
-    visionModel?: string;
-    perMillionTokens?: { in: number; out: number; visionIn: number; visionOut: number };
-  } = {};
-  try {
-    prices = await (await fetch(`${base}/pricing`, { headers: auth })).json();
-  } catch {
-    /* an endpoint without pricing still reports tokens */
-  }
-  const rates = prices.perMillionTokens;
-
-  emit('');
-  emit('Cost of one run, measured:');
-
-  const runs: { label: string; model?: string; vision: boolean; content: unknown }[] = [
-    {
-      label: 'pasted poster text',
-      model: prices.model,
-      vision: false,
-      content: SAMPLE_POSTER,
-    },
-    {
-      label: 'photo of a poster',
-      model: prices.visionModel,
-      vision: true,
-      content: [
-        { type: 'text', text: 'Read the events in this image.' },
-        { type: 'image_url', image_url: { url: posterSizedImage() } },
-      ],
-    },
-  ];
-
-  for (const run of runs) {
-    try {
-      const res = await fetch(chatUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...auth },
-        // The app's own request, with delivery the one difference: token
-        // counts ride on the response body, and a provider that streams need
-        // not report them at all. Same prompt, same constraints, same cost.
-        body: JSON.stringify({
-          ...requestBody(run.content as string | ContentPart[]),
-          stream: false,
-        }),
-      });
-      const raw = await res.text();
-      if (!res.ok) {
-        emit(`  ${run.label.padEnd(20)} ${readOutcome(res.status, raw)}`);
-        continue;
-      }
-      const usage = readUsage(raw);
-      if (!usage?.prompt_tokens) {
-        emit(`  ${run.label.padEnd(20)} answered, but reported no token usage`);
-        continue;
-      }
-      const inTok = usage.prompt_tokens ?? 0;
-      const outTok = usage.completion_tokens ?? 0;
-      let line = `  ${run.label.padEnd(20)} ${inTok} in + ${outTok} out tokens`;
-      if (rates) {
-        const perIn = run.vision ? rates.visionIn : rates.in;
-        const perOut = run.vision ? rates.visionOut : rates.out;
-        const cost = (inTok * perIn + outTok * perOut) / 1_000_000;
-        line += `  =  ${money(cost)}  (${plainCount(Math.round(1 / cost))} runs per €1)`;
-      }
-      emit(line);
-      if (run.model) emit(`  ${''.padEnd(20)} on ${run.model}`);
-    } catch (err) {
-      emit(`  ${run.label.padEnd(20)} ${(err as Error).message}`);
-    }
-  }
-
-  if (!rates) emit('  (set PRICE_IN / PRICE_OUT in wrangler.toml to see money as well as tokens)');
-}
 
 export async function diagnose(settings: Settings, onLine: (line: string) => void): Promise<string> {
   const lines: string[] = [
-    `DropToCal endpoint report — ${new Date().toISOString()}`,
+    `DropToCal API report — ${new Date().toISOString()}`,
     `build    ${__BUILD__} UTC`,
-    `method   ${usingOwnApi(settings) ? 'your own OpenAI-compatible API' : 'the shared endpoint'}`,
-    `endpoint ${activeEndpoint(settings) || '(none configured)'}`,
-    `model    ${usingOwnApi(settings) ? settings.model.trim() || '(none named)' : '(chosen by the endpoint)'}`,
-    `photos   ${
-      usingOwnApi(settings)
-        ? settings.visionModel.trim() || '(the same model)'
-        : '(chosen by the endpoint)'
-    }`,
-    `${usingOwnApi(settings) ? 'key     ' : 'code    '} ${authSecret(settings) ? 'set' : 'not set'}`,
+    `api      ${activeEndpoint(settings) || '(none configured)'}`,
+    `model    ${settings.model.trim() || '(none named)'}`,
+    `photos   ${settings.visionModel.trim() || '(the same model)'}`,
+    `key      ${authSecret(settings) ? 'set' : 'not set'}`,
     '',
   ];
   const emit = (line: string) => {
@@ -426,11 +254,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   };
 
   if (!activeEndpoint(settings)) {
-    emit(
-      usingOwnApi(settings)
-        ? 'No API address is set, so there is nothing to test.'
-        : 'No endpoint is configured in this build, so there is nothing to test.',
-    );
+    emit('No API address is set, so there is nothing to test.');
     return lines.join('\n');
   }
 
@@ -470,18 +294,11 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     emit(`models   could not be listed: ${(err as Error).message}`);
   }
   emit('');
-  /**
-   * The shared endpoint names the model itself; an API of one's own has to be
-   * told, and refuses anything that does not. And the probe that hands the
-   * model an https image needs an image at a public address — the shared
-   * endpoint serves one, so it is only asked where that exists.
-   */
-  const forText = usingOwnApi(settings) ? { model: wantedModel(false, settings) } : {};
-  const forImage = usingOwnApi(settings) ? { model: wantedModel(true, settings) } : {};
+  // A picture is asked of whichever model takes pictures, exactly as the app
+  // would ask it — otherwise the report tests something nobody runs.
+  const forText = { model: wantedModel(false, settings) };
+  const forImage = { model: wantedModel(true, settings) };
   for (const probe of PROBES) {
-    if (probe.name.endsWith('{url: https:}') && !HOSTED) continue;
-    // A picture is asked of whichever model takes pictures, exactly as the
-    // app would ask it — otherwise the report tests something nobody runs.
     const named = probe.name.startsWith('image:') ? forImage : forText;
     let outcome: string;
     try {
@@ -501,49 +318,12 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   emit('');
   emit('A probe that fails while "minimal" succeeds names the feature to drop.');
 
-  await measureCost(emit, auth);
-
   // Knowing that pictures are refused is only half an answer; the other half
   // is which of this provider's models would accept one.
-  if (!imageWorks && !proxyEndpoint(settings)) {
+  if (!imageWorks) {
     emit('');
     emit('Images were refused. Name a model that accepts them under "Model for photos".');
     if (models.length) emit(`This API lists: ${models.join(', ')}`);
-  } else if (!imageWorks) {
-    emit('');
-    emit('Images were refused, so trying the models most likely to accept one:');
-    for (const model of visionCandidates(models)) {
-      let outcome: string;
-      try {
-        const res = await fetch(`${proxyEndpoint(settings).replace(/\/+$/, '')}/probe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...auth },
-          body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: LOOK },
-                  { type: 'image_url', image_url: { url: DATA_URL } },
-                ],
-              },
-            ],
-          }),
-        });
-        outcome = readOutcome(res.status, await res.text());
-      } catch (err) {
-        outcome = `could not reach the endpoint: ${(err as Error).message}`;
-      }
-      emit(`  ${model.padEnd(30)} ${outcome}`);
-      if (outcome.startsWith('ok')) {
-        emit('');
-        emit(`Use this: VISION_MODEL = "${model}" in worker/wrangler.toml.`);
-        return lines.join('\n');
-      }
-    }
-    emit('');
-    emit('None of those accepted an image. Photos need a different provider.');
   }
 
   return lines.join('\n');

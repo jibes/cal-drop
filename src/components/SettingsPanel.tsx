@@ -3,8 +3,8 @@ import { checkConnection, listModels, type CheckLine } from '../lib/check';
 import { diagnose } from '../lib/diagnose';
 import { inNativeApp } from '../lib/native';
 import { PROVIDERS, providerFor } from '../lib/providers';
-import { endpointHost, proxyUrl, resetSettings, secretsAreEncrypted } from '../lib/settings';
-import type { LinkReader, Method, Settings } from '../lib/types';
+import { endpointHost, resetSettings, secretsAreEncrypted } from '../lib/settings';
+import type { LinkReader, Settings } from '../lib/types';
 
 interface Props {
   settings: Settings;
@@ -13,8 +13,6 @@ interface Props {
 }
 
 export function SettingsPanel({ settings, onSave, onClose }: Props) {
-  const [method, setMethod] = useState<Method>(settings.method);
-  const [code, setCode] = useState(settings.accessCode);
   const [apiBase, setApiBase] = useState(settings.apiBase);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
@@ -30,12 +28,9 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   /** What the provider says this key may use, offered in both model fields. */
   const [models, setModels] = useState<string[]>([]);
 
-  const own = method === 'direct';
   /** The advice below is a browser's; this app is not always one. */
   const app = inNativeApp();
   const edited = (): Settings => ({
-    method,
-    accessCode: code,
     apiBase,
     apiKey,
     model,
@@ -73,7 +68,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   // Ask the provider which models there are once there is an address and a
   // key to ask with — after typing has settled, not on every keystroke.
   useEffect(() => {
-    if (!own || !apiBase.trim() || !apiKey.trim()) return;
+    if (!apiBase.trim() || !apiKey.trim()) return;
     let current = true;
     const soon = setTimeout(() => {
       void listModels(edited()).then((list) => {
@@ -85,22 +80,19 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
       clearTimeout(soon);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [own, apiBase, apiKey]);
+  }, [apiBase, apiKey]);
 
-  const secret = own ? apiKey : code;
-  const setSecret = own ? setApiKey : setCode;
-
-  /** The key, or the access code, with what to know about where it goes. */
+  /** The key, with what to know about where it goes. */
   const secretFields = (
     <>
       <label>
-        {own ? 'API key' : 'Access code'}
+        API key
         <span className="row">
           <input
             type={show ? 'text' : 'password'}
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            placeholder={own ? 'sk-…' : 'from whoever runs this'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-…"
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
@@ -111,35 +103,28 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           </button>
         </span>
       </label>
-      {own && provider?.keys && (
+      {provider?.keys && (
         <p className="hint">
           A key comes from <code>{provider.keys}</code>. One with a spending limit is the safe kind
           to put in an app.
         </p>
       )}
       <p className="hint">
-        {own ? (
-          app ? (
-            <>
-              Your key stays on this device{secretsAreEncrypted() ? ', encrypted,' : ''} and is sent
-              straight to{' '}
-              {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
-              not as a web page, so any OpenAI-compatible API works here — including ones that
-              refuse browsers — and links are read on the device.
-            </>
-          ) : (
-            <>
-              Your key stays in this browser and is sent straight to{' '}
-              {apiBase.trim() ? endpointHost(edited()) : 'the API above'} —
-              which means the browser has to be allowed to call it. Most hosted providers do not
-              allow that, precisely because a key sent from a page is a key given away; OpenAI and
-              OpenRouter do, and APIs you run yourself usually can.
-            </>
-          )
+        {app ? (
+          <>
+            Your key stays on this device{secretsAreEncrypted() ? ', encrypted,' : ''} and is sent
+            straight to{' '}
+            {apiBase.trim() ? endpointHost(edited()) : 'the API above'}. The app calls it itself,
+            not as a web page, so any OpenAI-compatible API works here — including ones that
+            refuse browsers — and links are read on the device.
+          </>
         ) : (
           <>
-            Stays on this device{secretsAreEncrypted() ? ', encrypted' : ''}. Everything else — which model reads your posters, and who
-            pays for it — is set by whoever runs {endpointHost(edited())}.
+            Your key stays in this browser and is sent straight to{' '}
+            {apiBase.trim() ? endpointHost(edited()) : 'the API above'} —
+            which means the browser has to be allowed to call it. Most hosted providers do not
+            allow that, precisely because a key sent from a page is a key given away; OpenAI and
+            OpenRouter do, and APIs you run yourself usually can.
           </>
         )}
       </p>
@@ -151,147 +136,110 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>Settings</h2>
 
-        {/* A build without a shared endpoint has one way to reach a model, and a
-            greyed-out second one would only raise a question nobody can answer. */}
-        {proxyUrl && (
-        <fieldset className="method">
-          <legend>How the model is reached</legend>
-          <label className="choice">
-            <input
-              type="radio"
-              name="method"
-              checked={!own}
-              disabled={!proxyUrl}
-              onChange={() => setMethod('proxy')}
-            />
-            <span>
-              <strong>The shared endpoint</strong>
-              <em>
-                {proxyUrl
-                  ? 'Someone else holds the API key and picks the model; an access code says who may use it.'
-                  : 'This build was given no endpoint, so there is none to use.'}
-              </em>
-            </span>
-          </label>
-          <label className="choice">
-            <input type="radio" name="method" checked={own} onChange={() => setMethod('direct')} />
-            <span>
-              <strong>My own API</strong>
-              <em>Anything that speaks the OpenAI API. Your key, your model, your bill.</em>
-            </span>
-          </label>
-        </fieldset>
-        )}
-
-        {own && (
-          <>
-            <label>
-              Provider
-              <select
-                value={provider?.id ?? (apiBase.trim() ? 'custom' : '')}
-                onChange={(e) => {
-                  const chosen = PROVIDERS.find((p) => p.id === e.target.value);
-                  setApiBase(chosen ? chosen.base : '');
-                  setModels([]);
-                }}
-              >
-                {!apiBase.trim() && !provider && (
-                  <option value="" disabled>
-                    Choose a provider…
-                  </option>
-                )}
-                {PROVIDERS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-                <option value="custom">Other — type the address</option>
-              </select>
-            </label>
-            {provider && !provider.browser && !app && (
-              <p className="hint warn">
-                {provider.name} does not let web pages call it, so it will not work here. OpenAI,
-                OpenRouter, Groq and Mistral do.
-              </p>
+        <label>
+          Provider
+          <select
+            value={provider?.id ?? (apiBase.trim() ? 'custom' : '')}
+            onChange={(e) => {
+              const chosen = PROVIDERS.find((p) => p.id === e.target.value);
+              setApiBase(chosen ? chosen.base : '');
+              setModels([]);
+            }}
+          >
+            {!apiBase.trim() && !provider && (
+              <option value="" disabled>
+                Choose a provider…
+              </option>
             )}
-            <label>
-              API address
-              <input
-                type="url"
-                value={apiBase}
-                onChange={(e) => setApiBase(e.target.value)}
-                placeholder="https://api.example.com/v1"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-            {secretFields}
-            <label>
-              Model
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                list="caldrop-models"
-                placeholder={models.length ? 'pick or type a model' : 'the model to ask'}
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              Model for photos
-              <input
-                type="text"
-                value={visionModel}
-                onChange={(e) => setVisionModel(e.target.value)}
-                list="caldrop-models"
-                placeholder="the same one"
-                autoComplete="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-            </label>
-            <datalist id="caldrop-models">
-              {models.map((id) => (
-                <option key={id} value={id} />
-              ))}
-            </datalist>
-            <p className="hint">
-              A photo goes to the second one; text and PDFs to the first. Leave it empty if the
-              same model reads both — many read only one.
-            </p>
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            <option value="custom">Other — type the address</option>
+          </select>
+        </label>
+        {provider && !provider.browser && !app && (
+          <p className="hint warn">
+            {provider.name} does not let web pages call it, so it will not work here. OpenAI,
+            OpenRouter, Groq and Mistral do.
+          </p>
+        )}
+        <label>
+          API address
+          <input
+            type="url"
+            value={apiBase}
+            onChange={(e) => setApiBase(e.target.value)}
+            placeholder="https://api.example.com/v1"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        </label>
+        {secretFields}
+        <label>
+          Model
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            list="caldrop-models"
+            placeholder={models.length ? 'pick or type a model' : 'the model to ask'}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        </label>
+        <label>
+          Model for photos
+          <input
+            type="text"
+            value={visionModel}
+            onChange={(e) => setVisionModel(e.target.value)}
+            list="caldrop-models"
+            placeholder="the same one"
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+          />
+        </label>
+        <datalist id="caldrop-models">
+          {models.map((id) => (
+            <option key={id} value={id} />
+          ))}
+        </datalist>
+        <p className="hint">
+          A photo goes to the second one; text and PDFs to the first. Leave it empty if the
+          same model reads both — many read only one.
+        </p>
 
+        {/* In the app the phone reads a link itself; only a browser needs someone to ask. */}
+        {!app && (
+          <>
             <fieldset className="method">
               <legend>Links</legend>
               <label className="choice">
                 <input type="radio" name="links" checked={linkReader === 'off'} onChange={() => setLinkReader('off')} />
                 <span>
                   <strong>Not read</strong>
-                  <em>
-                    {app
-                      ? 'The app reads a link itself; when a site refuses it, paste the text or take a screenshot.'
-                      : 'A browser may not fetch another site, so links are not read here. Paste the text or take a screenshot.'}
-                  </em>
+                  <em>A browser may not fetch another site, so links are not read here. Paste the text or take a screenshot.</em>
                 </span>
               </label>
               <label className="choice">
                 <input type="radio" name="links" checked={linkReader === 'jina'} onChange={() => setLinkReader('jina')} />
                 <span>
                   <strong>Jina Reader</strong>
-                  <em>
-                    A public service (jina.ai) fetches the page. It sees every link you paste. Free, with a
-                    rate limit{app ? '; used only when the app cannot read a page itself.' : '.'}
-                  </em>
+                  <em>A public service (jina.ai) fetches the page. It sees every link you paste. Free, with a rate limit.</em>
                 </span>
               </label>
               <label className="choice">
                 <input type="radio" name="links" checked={linkReader === 'server'} onChange={() => setLinkReader('server')} />
                 <span>
-                  <strong>My own server</strong>
+                  <strong>My own reader</strong>
                   <em>
-                    A page reader you run yourself — see <code>fetcher/</code> in this project.
+                    Called the way Jina is: <code>GET address/link</code> answers with the page’s text.
+                    The <code>fetcher/</code> in this project is one.
                   </em>
                 </span>
               </label>
@@ -315,24 +263,23 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             {linkReader === 'server' && (
               <>
                 <label>
-                  Server address
+                  Reader address
                   <input
                     type="url"
                     value={pageReader}
                     onChange={(e) => setPageReader(e.target.value)}
-                    placeholder="https://…workers.dev"
+                    placeholder="https://reader.example.com"
                     autoComplete="off"
                     autoCapitalize="off"
                     spellCheck={false}
                   />
                 </label>
                 <label>
-                  Its access code
+                  Its key <span className="muted">(optional, sent as a Bearer token)</span>
                   <input
                     type="password"
                     value={pageReaderCode}
                     onChange={(e) => setPageReaderCode(e.target.value)}
-                    placeholder="the code it was deployed with"
                     autoComplete="off"
                     autoCapitalize="off"
                     spellCheck={false}
@@ -343,37 +290,25 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           </>
         )}
 
-        {/* The access code is all a shared endpoint needs; for an API of one's own the
-            key sits with its address, above. */}
-        {!own && secretFields}
-
         <div className="diagnose">
-          {own ? (
-            <>
-              <button className="ghost small" onClick={runCheck} disabled={testing}>
-                {testing ? 'Testing…' : 'Test connection'}
-              </button>
-              {checks.length > 0 && (
-                <ul className="checks">
-                  {checks.map((line) => (
-                    <li key={line.label} className={line.state}>
-                      <span aria-hidden="true">
-                        {line.state === 'ok' ? '✓' : line.state === 'fail' ? '✗' : line.state === 'warn' ? '!' : '–'}
-                      </span>{' '}
-                      <strong>{line.label}</strong>: {line.detail}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {checks.length > 0 && !testing && (
-                <button className="ghost small" onClick={runTest}>
-                  Technical details
-                </button>
-              )}
-            </>
-          ) : (
-            <button className="ghost small" onClick={runTest} disabled={testing}>
-              {testing ? 'Testing endpoint…' : 'Test endpoint'}
+          <button className="ghost small" onClick={runCheck} disabled={testing}>
+            {testing ? 'Testing…' : 'Test connection'}
+          </button>
+          {checks.length > 0 && (
+            <ul className="checks">
+              {checks.map((line) => (
+                <li key={line.label} className={line.state}>
+                  <span aria-hidden="true">
+                    {line.state === 'ok' ? '✓' : line.state === 'fail' ? '✗' : line.state === 'warn' ? '!' : '–'}
+                  </span>{' '}
+                  <strong>{line.label}</strong>: {line.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+          {checks.length > 0 && !testing && (
+            <button className="ghost small" onClick={runTest}>
+              Technical details
             </button>
           )}
           {report && (
@@ -405,8 +340,6 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             className="ghost small"
             onClick={() => {
               const fresh = resetSettings();
-              setMethod(fresh.method);
-              setCode(fresh.accessCode);
               setApiBase(fresh.apiBase);
               setApiKey(fresh.apiKey);
               setModel(fresh.model);

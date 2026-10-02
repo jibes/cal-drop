@@ -4,11 +4,12 @@ import { deeplinkCaveat, googleCalendarUrl, outlookCalendarUrl } from '../lib/ca
 import {
   addToCalendarApp,
   calendarAppAvailable,
+  inNativeApp,
   openCalendarFileInApp,
   saveCalendarFileInApp,
 } from '../lib/native';
 import { describeRrule, formatWhen } from '../lib/format';
-import { downloadIcs, icsLink } from '../lib/ics';
+import { downloadIcs } from '../lib/ics';
 import { Icon } from './Icon';
 import type { EventDraft } from '../lib/types';
 
@@ -61,41 +62,30 @@ async function openInCalendarApp(event: EventDraft): Promise<void> {
 }
 
 /**
- * The calendar file, served over https so the device decides what opens it.
+ * The calendar file, handed to whatever the device opens it with.
  *
  * There is no way for a web page to put an event straight into a calendar app
  * on Android: Chromium adds CATEGORY_BROWSABLE to any intent a page launches,
  * and a calendar's insert filter does not declare it, so such an intent
- * matches nothing. The file is the only handover the browser is allowed to
- * make, and which app receives it is the device's default to set.
+ * matches nothing. A browser can only download the file; the app opens it
+ * with the calendar itself.
  */
 async function openCalendarFile(events: EventDraft[]): Promise<void> {
-  // Inside the app the link would leave for the browser and a download
-  // prompt; the app opens the file with the calendar itself instead.
   if (await openCalendarFileInApp(events)) return;
-  const href = icsLink(events);
-  if (href) window.location.href = href;
-  else downloadIcs(events);
+  downloadIcs(events);
 }
 
 /**
  * The same file, to keep rather than to hand on.
  *
- * Opening it is what the file is usually for, and it is what every route
- * here did: the endpoint marks it inline, which is the instruction that
- * makes a phone offer it to a calendar, and the app's own handover fires a
- * view intent. Neither leaves anything behind. But a calendar to mail on, to
+ * Opening it is what the file is usually for, and the app's own handover
+ * fires a view intent that leaves nothing behind. But a calendar to mail on, to
  * import somewhere else, or simply to keep is a real thing to want, so it is
  * now its own choice rather than the fallback nobody could reach on purpose.
  */
 async function saveCalendarFile(events: EventDraft[]): Promise<void> {
   if (await saveCalendarFileInApp(events)) return;
-  // Asking the endpoint for it as an attachment keeps the browser's own
-  // download in charge of where it goes; a blob does the same where there is
-  // no endpoint, or where the calendar is too long to travel in a URL.
-  const href = icsLink(events, true);
-  if (href) window.location.href = href;
-  else downloadIcs(events);
+  downloadIcs(events);
 }
 
 /**
@@ -224,7 +214,8 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
         <AddButton
           label={`Add ${events.length} to calendar`}
           onAdd={() => openCalendarFile(events)}
-          options={[saveOption(events)]}
+          // In a browser the main button already downloads the file.
+          options={inNativeApp() ? [saveOption(events)] : []}
         />
         {children}
       </div>
@@ -234,10 +225,10 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
   const web = (url: string) => () => window.open(url, '_blank', 'noreferrer');
   const others: Option[] = [
     // In the app the main button goes straight into the calendar, so opening
-    // the file is a genuine alternative; in a browser that is what the main
-    // button already does, and only keeping the file is left to offer.
+    // the file is a genuine alternative, and keeping it another. In a browser
+    // the main button downloads the file, which is all a browser can do.
     ...(calendarApp ? [openOption(events)] : []),
-    saveOption(events),
+    ...(inNativeApp() ? [saveOption(events)] : []),
     { label: 'Google Calendar', run: web(googleCalendarUrl(single)) },
     { label: 'Outlook', run: web(outlookCalendarUrl(single)) },
   ];
