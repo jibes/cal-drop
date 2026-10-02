@@ -115,10 +115,8 @@ Everything is in Settings, and nothing is built in:
 | Model, model for photos | Offered from the API's own list. One model is enough if it reads pictures. |
 | Links (web only) | Not read, Jina Reader, or a reader of your own. |
 
-There used to be a shared endpoint with an access code in front of it. It is
-gone from the app; `worker/` remains, and is now simply one more
-OpenAI-compatible API you can run for yourself — its access code is the key.
-Settings saved for it carry over as exactly that.
+There used to be a shared endpoint, which held a key and asked for an access
+code instead. It is gone; settings saved for it ask for an API again.
 
 ## "Failed to fetch"
 
@@ -144,33 +142,22 @@ ways out:
 
 1. Enable CORS for your origin on the API, if you control it.
 2. Use a provider that allows browser calls.
-3. Put `worker/` (or `relay/`) in front of it — it answers the preflight, adds
-   the headers and keeps the key server-side.
+3. Put `relay/` in front of it — it answers the preflight and passes your key
+   through untouched.
 4. Use the app, which calls the API itself and is not held to any of this.
 
-## Check an endpoint before trusting it
+## Check an API before trusting it
 
-OpenAI-compatible endpoints differ on exactly the things DropToCal leans on:
-streaming, tool calling, image input, and whether the model reads a European
-date correctly. `npm run probe` checks all four against a real endpoint, and the
-last check runs the app's own extraction code — not a copy of it — over a sample
-German poster:
-
-```bash
-CALDROP_BASE_URL=https://your-worker.workers.dev/v1 \
-CALDROP_ACCESS_CODE=... \
-npm run probe
-```
-
-It checks streaming, tool calling, the `json_object` fallback, image input and
-link reading, then runs the app's own extraction over a sample German poster. It
-exits non-zero if the endpoint cannot drive the app.
+APIs that call themselves OpenAI-compatible differ on exactly the things
+DropToCal leans on: streaming, tool calling, image input, and which parameters
+a model accepts. Settings → **Test connection** reads a sample poster and a
+sample photo through the app's own code; **Technical details** then asks the
+API one feature at a time and names the one it refuses.
 
 ## Develop
 
 ```bash
 npm install
-cp .env.example .env.local   # optional, non-secret defaults
 npm run dev
 ```
 
@@ -180,9 +167,8 @@ GitHub Pages project subpath and from a native WebView.
 ## Deploy
 
 `.github/workflows/deploy.yml` builds and publishes on every push to `main`. Enable it
-once under **Settings → Pages → Source: GitHub Actions**. Set the non-secret defaults as
-repository *variables* (Settings → Secrets and variables → Actions → Variables) if you
-want them baked in.
+once under **Settings → Pages → Source: GitHub Actions**. Nothing is baked in: every
+setting is made in the app.
 
 ## Native builds
 

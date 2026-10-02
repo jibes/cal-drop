@@ -11,10 +11,6 @@
  * current standard, and when one is refused, ask again without it — the same
  * request otherwise, not a different way of asking. What worked is kept per
  * API and model, so the next request starts from there.
- *
- * Only an API of one's own is tuned this way. The shared endpoint takes
- * `max_tokens` and sets the reasoning itself (see worker/), and what has been
- * proven against it stays as it is.
  */
 
 export type Param = 'max_completion_tokens' | 'max_tokens' | 'temperature' | 'reasoning_effort';

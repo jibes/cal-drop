@@ -102,8 +102,9 @@ export default function App() {
     } catch (err) {
       if ((err as Error).name === 'AbortError') return null;
       const message = (err as Error).message || 'Something went wrong.';
-      // An access-code problem is the one error with an obvious next action.
-      if (/access code/i.test(message)) setShowSettings(true);
+      // A missing address or model, or a refused key, has one obvious next
+      // action: Settings.
+      if (/No API address|No model is named|refused the key/i.test(message)) setShowSettings(true);
       setError(message);
       return null;
     } finally {

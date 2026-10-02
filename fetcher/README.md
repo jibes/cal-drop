@@ -3,11 +3,9 @@
 It reads a web page and hands back its text. That is the whole worker.
 
 A browser may not fetch another site — the same-origin policy is not
-negotiable from inside a page — so something on a server has to do it. The
-endpoint in `worker/` already does, on the way to asking a model about the
-page. This does it on its own, so that an app pointed at its own API, which
-has no such route, can still read a link: fetch here, then send the text
-wherever the settings point. Two steps instead of none.
+negotiable from inside a page — so something on a server has to do it. In the
+app the phone reads a link itself; on the web, this is one reader DropToCal
+can ask, and Jina Reader the other.
 
 ## Why it asks for a code
 
@@ -18,8 +16,7 @@ whoever is really asking.
 
 The address protections — every redirect hop checked, not only the address
 that was typed, plus a size cap and a content-type check — live in
-`../shared/page.js`, shared with the endpoint so that the two cannot drift
-apart. `ALLOWED_ORIGINS` is *not* one of those protections: it decides which
+`../shared/page.js`. `ALLOWED_ORIGINS` is *not* one of those protections: it decides which
 pages a browser will let call this, and decides nothing about anyone calling
 it with curl, who can claim any origin. So the access code is the door, and
 this refuses to serve at all until one is set — or until `ALLOW_NO_CODE` says

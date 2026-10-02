@@ -290,7 +290,7 @@ class ThoughtTooLong extends Error {}
 /**
  * Whatever a server said went wrong, as a sentence.
  *
- * The shared endpoint answers {"error": "some words"}. The OpenAI shape, and
+ * Some servers answer {"error": "some words"}. The OpenAI shape, and
  * so every API that copies it, nests the words: {"error": {"message": ...}}.
  * Reading only the first produced the literal text "[object Object]" in
  * place of "Incorrect API key provided" — the one message that would have

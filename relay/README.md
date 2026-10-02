@@ -16,9 +16,10 @@ restriction; it does not make the thing the restriction was there to prevent
 safe. Use a key you are willing to have on the device, and one you can
 revoke.
 
-The other worker in this repository, `worker/`, is the opposite arrangement:
-it holds the key, picks the model, and asks for an access code, so that
-people can use the app without having a key at all.
+There used to be a second worker here that did the opposite — held a key,
+picked the model and asked for an access code. It is gone; this one is all
+the server DropToCal needs, and only in a browser: the app calls an API
+itself.
 
 ## Deploying
 

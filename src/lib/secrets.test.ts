@@ -38,26 +38,16 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const RETIRED = 'https://caldrop-endpoint.sebastian-9fc.workers.dev/v1';
-
-describe('settings from the shared endpoint', () => {
-  it('become that endpoint as an API of one’s own, the code its key', async () => {
-    // How a phone looks after a build that kept the code encrypted.
+describe('settings from the shared endpoint, which is gone', () => {
+  it('lose the access code, so Settings asks for an API', async () => {
     local.set(KEY, JSON.stringify({ method: 'proxy', model: '' }));
     vault.set('accessCode', 'code-123');
     fakeStore();
     const s = await settingsModule();
     await s.prepareSecrets();
-    expect(s.loadSettings()).toMatchObject({
-      apiBase: RETIRED,
-      apiKey: 'code-123',
-      model: 'gemma-4-31b',
-      visionModel: 'gemma-3-27b-it',
-    });
-    expect(vault.get('apiKey')).toBe('code-123');
+    expect(s.loadSettings()).toMatchObject({ apiBase: '', apiKey: '' });
     expect(vault.has('accessCode')).toBe(false);
     expect(local.get(KEY)).not.toContain('code-123');
-    expect(JSON.parse(local.get(KEY)!)).not.toHaveProperty('method');
   });
 
   it('do the same from localStorage, and from the very first shape, the code under apiKey', async () => {
@@ -68,7 +58,7 @@ describe('settings from the shared endpoint', () => {
       fakeStore();
       const s = await settingsModule();
       await s.prepareSecrets();
-      expect(s.loadSettings()).toMatchObject({ apiBase: RETIRED, apiKey: 'code-123' });
+      expect(s.loadSettings()).toMatchObject({ apiBase: '', apiKey: '' });
       expect(local.get(KEY)).not.toContain('code-123');
     }
   });

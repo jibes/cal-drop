@@ -260,7 +260,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
 
   // Before anything else: is the endpoint there at all, and does it serve this
   // site? Every probe below fails the same unreadable way if it does not, and
-  // this is one public GET that needs no access code and no preflight.
+  // this is one public GET that needs no key and no preflight.
   {
     let host = activeEndpoint(settings);
     try {

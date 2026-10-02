@@ -2,16 +2,6 @@ import type { LinkReader, Settings } from './types';
 
 const KEY = 'caldrop.settings.v1';
 
-/**
- * The shared endpoint earlier builds were given, which took an access code.
- * There is no such thing any more — every build calls an API of its user's
- * choosing — but that endpoint is an OpenAI-compatible API like any other, and
- * the code works as its key. So settings from then become settings for it,
- * and nobody who used one has to set anything up again.
- */
-const RETIRED_ENDPOINT = 'https://caldrop-endpoint.sebastian-9fc.workers.dev/v1';
-const RETIRED_MODELS = { model: 'gemma-4-31b', visionModel: 'gemma-3-27b-it' };
-
 export const defaultSettings: Settings = {
   apiBase: '',
   apiKey: '',
@@ -78,20 +68,9 @@ export async function prepareSecrets(): Promise<void> {
     const found = {} as Record<Secret, string>;
     for (const name of SECRETS) found[name] = (await store.get({ name })).value ?? '';
 
-    // An access code kept here by an earlier build is the key to the retired
-    // endpoint now; see retired() below, which moves the rest.
-    const code = (await store.get({ name: 'accessCode' })).value ?? '';
-    if (code) {
-      const raw = localStorage.getItem(KEY);
-      const stored = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      if (stored.v !== SHAPE && stored.method !== 'direct') {
-        // The endpoint was what was in use, so its code is the key in use.
-        localStorage.setItem(KEY, JSON.stringify(retired(stored, code)));
-        await store.set({ name: 'apiKey', value: code });
-        found.apiKey = code;
-      }
-      await store.remove({ name: 'accessCode' });
-    }
+    // An access code kept by an earlier build opened the shared endpoint,
+    // which is gone; it opens nothing now.
+    await store.remove({ name: 'accessCode' });
 
     const raw = localStorage.getItem(KEY);
     if (raw) {
@@ -121,32 +100,16 @@ export async function prepareSecrets(): Promise<void> {
 const SHAPE = 2;
 
 /**
- * Settings written for the shared endpoint, as settings for that same
- * endpoint called as an API of one's own: its address, the code as the key,
- * and the two models it was configured with, which it answers to anyway.
- */
-function retired(stored: Record<string, unknown>, code: string): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...stored, v: SHAPE, apiBase: RETIRED_ENDPOINT, apiKey: code };
-  delete out.method;
-  delete out.accessCode;
-  if (!clean(out.model)) out.model = RETIRED_MODELS.model;
-  if (!clean(out.visionModel)) out.visionModel = RETIRED_MODELS.visionModel;
-  return out;
-}
-
-/**
- * Whatever an earlier build stored, in today's shape. The first builds kept
- * the access code under apiKey and stored no method at all; later ones said
- * 'proxy' or 'direct', and only 'direct' was already an API of one's own.
+ * Whatever an earlier build stored, in today's shape. Earlier builds could
+ * call a shared endpoint with an access code — the first ones kept the code
+ * under apiKey and stored no method at all, later ones said 'proxy' or
+ * 'direct'. The endpoint is gone, so a code is dropped; only 'direct' was
+ * already an API of one's own, and stays as it was.
  */
 function upgraded(stored: Record<string, unknown>): Record<string, unknown> {
   if (stored.v === SHAPE) return stored;
-  const code =
-    stored.method === 'direct'
-      ? ''
-      : clean(stored.accessCode) || (stored.method === undefined ? clean(stored.apiKey) : '');
-  if (code) return retired(stored, code);
   const out: Record<string, unknown> = { ...stored, v: SHAPE };
+  if (stored.method === undefined) delete out.apiKey;
   delete out.method;
   delete out.accessCode;
   return out;

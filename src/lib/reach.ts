@@ -59,7 +59,7 @@ async function firstLine(res: Response): Promise<string | undefined> {
     let said = body;
     try {
       const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
-      // Flat for the shared endpoint, nested for anything that copies OpenAI.
+      // Flat for some servers, nested for anything that copies OpenAI.
       for (const found of [parsed.error, parsed.message]) {
         if (typeof found === 'string' && found.trim()) { said = found.trim(); break; }
         const inner = found && typeof found === 'object' ? (found as { message?: unknown }).message : null;
@@ -133,7 +133,7 @@ async function ask(signal: AbortSignal): Promise<Reached> {
     if (!res.ok) return { reach: 'refusing', status: res.status, said: await firstLine(res) };
 
     // Everything the app actually sends is a POST carrying a content type and
-    // an access code, which the browser will not send until an OPTIONS has
+    // a key, which the browser will not send until an OPTIONS has
     // been answered — a different question, and the one a tab cannot ask.
     try {
       await fetch(PREFLIGHT_POST(), {

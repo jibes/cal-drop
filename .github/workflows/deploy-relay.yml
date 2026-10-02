@@ -1,7 +1,7 @@
 name: Deploy relay (Cloudflare Worker)
 
 # Deploys relay/, which makes an OpenAI-compatible API callable from a
-# browser and does nothing else. Unlike the shared endpoint it holds no key,
+# browser and does nothing else. It holds no key,
 # so there is no API key secret here and none to leak.
 on:
   workflow_dispatch:

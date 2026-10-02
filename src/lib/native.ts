@@ -143,8 +143,8 @@ export async function saveCalendarFileInApp(events: EventDraft[]): Promise<strin
  * The same-origin policy is the browser's rule, and inside the shell there is
  * no browser doing the asking: Capacitor's HTTP goes through the platform's
  * own stack, where a site that offers no CORS headers is simply a site. So
- * the one thing the shared endpoint was needed for — fetching a link — the
- * app can do for itself.
+ * fetching a link, which a browser needs a service for, the app can do for
+ * itself.
  *
  * Deliberately called rather than switched on. Capacitor can be configured to
  * patch window.fetch so every request goes this way, which would quietly
