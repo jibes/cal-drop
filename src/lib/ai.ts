@@ -15,6 +15,8 @@ import {
 import { describeReach, reachEndpoint } from './reach';
 import { isValidZone, localZone } from './tz';
 import type { EventDraft, ExtractionSource, Settings } from './types';
+import { addDays } from './ics';
+import { daysBetween, firstOccurrence, seriesEnd } from './recurrence';
 
 export const SYSTEM_PROMPT = `You extract calendar events from event posters, flyers, screenshots, PDFs and web pages.
 
@@ -26,7 +28,7 @@ Rules:
 - If only a date and no time is given, set all_day true.
 - A source may list several events (a festival programme, a series). Return each as its own object.
 - When several events each name their own place, every event keeps the place printed with its own date. Never carry one event's venue over to the next.
-- For a recurring event ("every Tuesday", "jeden ersten Freitag im Monat") set rrule to an RFC 5545 recurrence rule body and set start_date to the first occurrence.
+- For a recurring event ("every Tuesday", "jeden ersten Freitag im Monat") set rrule to an RFC 5545 recurrence rule body, using only FREQ, INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY, BYMONTH and BYSETPOS (e.g. FREQ=YEARLY;BYMONTH=6;BYMONTHDAY=21). Set start_date to the first occurrence: the start date the source gives, or else the first one on or after the reference date — which can be today. end_date and end_time belong to that first occurrence; when the series itself ends ("until 19 December"), that date goes in UNTIL, never in end_date.
 - Set timezone to the IANA zone of the venue when the place is clear enough to know it (Berlin venue -> Europe/Berlin). Leave it empty if you are guessing.
 - source_text must quote, verbatim, the words you read the date and time from. Never paraphrase it, and keep it to the sentence the date was in.
 - description is for the event's own particulars — a doors time, a price, who is playing — in at most two sentences. Never copy the page into it: menus, cookie notices, imprints, box-office hours and lists of other events are not part of this event.
@@ -487,12 +489,40 @@ function normalizeDate(v: string | undefined): string {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
-/** Accept only rules built from the parts we render and export. */
-function normalizeRrule(v: string | undefined): string {
+/**
+ * What each part of a rule may hold. A calendar refuses a whole event over a
+ * part it does not know, and the model does invent them — MONTH=6;DAY=21 for
+ * "every 21 June" — so anything not on this list is dropped rather than
+ * passed on. What is left still repeats; the start date carries the rest.
+ */
+const RULE_PARTS: Record<string, RegExp> = {
+  FREQ: /^(DAILY|WEEKLY|MONTHLY|YEARLY)$/,
+  INTERVAL: /^\d{1,3}$/,
+  COUNT: /^\d{1,4}$/,
+  UNTIL: /^\d{8}(T\d{6}Z?)?$/,
+  BYDAY: /^([+-]?\d)?(MO|TU|WE|TH|FR|SA|SU)(,([+-]?\d)?(MO|TU|WE|TH|FR|SA|SU))*$/,
+  BYMONTHDAY: /^-?\d{1,2}(,-?\d{1,2})*$/,
+  BYMONTH: /^\d{1,2}(,\d{1,2})*$/,
+  BYSETPOS: /^-?\d{1,3}$/,
+  WKST: /^(MO|TU|WE|TH|FR|SA|SU)$/,
+};
+
+/** Accept only rules built from parts we render and export. */
+export function normalizeRrule(v: string | undefined): string {
   if (!v) return '';
-  const body = v.trim().replace(/^RRULE:/i, '').toUpperCase();
-  if (!/^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/.test(body)) return '';
-  return /^[A-Z0-9=;,+-]+$/.test(body) ? body : '';
+  const body = v.trim().replace(/^RRULE:/i, '').toUpperCase().replace(/\s+/g, '');
+  const kept = body
+    .split(';')
+    .map((part) => part.split('='))
+    .filter(([key, value]) => key in RULE_PARTS && RULE_PARTS[key].test(value ?? ''))
+    // "+1FR" means the same as "1FR"; the plain one is what everything reads.
+    .map(([key, value]) => `${key}=${key === 'BYDAY' ? value.replace(/\+/g, '') : value}`);
+  // FREQ goes first, where older readers of the format look for it.
+  kept.sort((a, b) => Number(b.startsWith('FREQ=')) - Number(a.startsWith('FREQ=')));
+  if (!kept[0]?.startsWith('FREQ=')) return '';
+  // COUNT and UNTIL together are not allowed; the count is the more literal.
+  const counted = kept.some((p) => p.startsWith('COUNT='));
+  return kept.filter((p) => !(counted && p.startsWith('UNTIL='))).join(';');
 }
 
 /**
@@ -546,17 +576,25 @@ function toDraft(raw: RawEvent, i: number): EventDraft {
   const startTime =
     normalizeTime(raw.start_time) || (raw.all_day === false ? timeIn(raw.source_text || '') : '');
   const timezone = (raw.timezone || '').trim();
+  // An end that is the series' goes into the rule; then the first date the
+  // rule really produces, with the event's own end moved along with it.
+  const readStart = normalizeDate(raw.start_date);
+  const read = seriesEnd(readStart, normalizeDate(raw.end_date), normalizeRrule(raw.rrule));
+  const rrule = read.rrule;
+  const startDate = firstOccurrence(readStart, rrule);
+  const endDate =
+    read.endDate && startDate !== readStart ? addDays(read.endDate, daysBetween(readStart, startDate)) : read.endDate;
   return {
     id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
     title: clip(raw.title, LIMITS.title) || 'Untitled event',
-    startDate: normalizeDate(raw.start_date),
+    startDate,
     startTime,
-    endDate: normalizeDate(raw.end_date),
+    endDate,
     endTime: normalizeTime(raw.end_time),
     allDay: raw.all_day === true || !startTime,
     location: clip(raw.location, LIMITS.location),
     timezone: isValidZone(timezone) ? timezone : '',
-    rrule: normalizeRrule(raw.rrule),
+    rrule,
     description: clip(raw.description, LIMITS.description),
     url: (raw.url || '').trim(),
     sourceText: clip(raw.source_text, LIMITS.sourceText),

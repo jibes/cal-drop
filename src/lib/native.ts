@@ -1,4 +1,5 @@
 import { buildIcs, icsName, resolvedEnd } from './ics';
+import { ruleFor } from './recurrence';
 import { zonedToUtc } from './tz';
 import type { EventDraft } from './types';
 
@@ -83,7 +84,8 @@ export function insertPayload(event: EventDraft): InsertPayload {
     allDay: event.allDay,
     location: event.location,
     description: [event.description, event.url].filter(Boolean).join('\n\n'),
-    rrule: event.rrule,
+    // Android's calendars store a timed event's repeat end as a UTC instant.
+    rrule: ruleFor(event.rrule, event, event.allDay ? 'date' : 'utc'),
     timezone: event.timezone,
   };
 }

@@ -62,6 +62,16 @@ async function openInCalendarApp(event: EventDraft): Promise<void> {
 }
 
 /**
+ * Whether the calendar's own "new event" screen can take this event whole.
+ *
+ * Not a repeating one: Android's insert request carries the rule, but a
+ * calendar may ignore it, and Samsung's does — the event opens as a one-off
+ * with nothing to say a repeat was lost. The calendar file carries the rule
+ * as data every calendar reads, so a repeating event goes that way.
+ */
+const insertKeepsAll = (event: EventDraft): boolean => !event.rrule;
+
+/**
  * The calendar file, handed to whatever the device opens it with.
  *
  * There is no way for a web page to put an event straight into a calendar app
@@ -225,9 +235,10 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
   const web = (url: string) => () => window.open(url, '_blank', 'noreferrer');
   const others: Option[] = [
     // In the app the main button goes straight into the calendar, so opening
-    // the file is a genuine alternative, and keeping it another. In a browser
-    // the main button downloads the file, which is all a browser can do.
-    ...(calendarApp ? [openOption(events)] : []),
+    // the file is a genuine alternative, and keeping it another — except for
+    // a repeating event, which the main button already sends as the file. In
+    // a browser the main button downloads the file, all a browser can do.
+    ...(calendarApp && insertKeepsAll(single) ? [openOption(events)] : []),
     ...(inNativeApp() ? [saveOption(events)] : []),
     { label: 'Google Calendar', run: web(googleCalendarUrl(single)) },
     { label: 'Outlook', run: web(outlookCalendarUrl(single)) },
@@ -237,7 +248,7 @@ export function Destinations({ events, children }: { events: EventDraft[]; child
     <div className="card-actions">
       <AddButton
         label="Add to calendar"
-        onAdd={() => (calendarApp ? openInCalendarApp(single) : openCalendarFile(events))}
+        onAdd={() => (calendarApp && insertKeepsAll(single) ? openInCalendarApp(single) : openCalendarFile(events))}
         options={others}
       />
       {children}

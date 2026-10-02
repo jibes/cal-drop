@@ -1,3 +1,4 @@
+import { ruleFor } from './recurrence';
 import { zonedToUtc } from './tz';
 import type { EventDraft } from './types';
 
@@ -55,6 +56,8 @@ export function resolvedEnd(event: EventDraft): { date: string; time: string } {
 const utcStamp = (d: Date) => `${d.toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`;
 
 function eventLines(event: EventDraft): string[] {
+  // The rule's end has to be in the same form as the start; see ruleFor.
+  let form: 'date' | 'utc' | 'floating' = 'date';
   const lines = [
     'BEGIN:VEVENT',
     `UID:${event.id}-${Math.random().toString(36).slice(2, 8)}@caldrop`,
@@ -77,14 +80,16 @@ function eventLines(event: EventDraft): string[] {
       // in UTC is exact everywhere and needs no VTIMEZONE block to travel.
       lines.push(`DTSTART:${utcStamp(startUtc)}`);
       lines.push(`DTEND:${utcStamp(endUtc)}`);
+      form = 'utc';
     } else {
       // Floating local time: "20:00" on a poster means 20:00 where the event is.
       lines.push(`DTSTART:${compactDate(event.startDate)}T${event.startTime.replace(':', '')}00`);
       lines.push(`DTEND:${compactDate(end.date)}T${end.time.replace(':', '')}00`);
+      form = 'floating';
     }
   }
 
-  if (event.rrule) lines.push(`RRULE:${event.rrule}`);
+  if (event.rrule) lines.push(`RRULE:${ruleFor(event.rrule, event, form)}`);
   lines.push(`SUMMARY:${escapeText(event.title)}`);
   if (event.location) lines.push(`LOCATION:${escapeText(event.location)}`);
 

@@ -1,4 +1,5 @@
 import { addDays, resolvedEnd } from './ics';
+import { ruleFor } from './recurrence';
 import { localZone } from './tz';
 import type { EventDraft } from './types';
 
@@ -39,7 +40,7 @@ export function googleCalendarUrl(event: EventDraft): string {
     location: event.location,
     ctz: event.timezone || localZone(),
   });
-  if (event.rrule) params.set('recur', `RRULE:${event.rrule}`);
+  if (event.rrule) params.set('recur', `RRULE:${ruleFor(event.rrule, event, event.allDay ? 'date' : 'utc')}`);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
