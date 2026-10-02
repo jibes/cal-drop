@@ -173,7 +173,14 @@ export default function App() {
         forgetPages();
         void run(async () => {
           // pdf.js is a large dependency; only pay for it when a PDF turns up.
-          const { readPdf } = await import('./lib/pdf');
+          // It is also written for current engines: an Android WebView older
+          // than Chrome 94 cannot even parse it, and should say why.
+          const { readPdf } = await import('./lib/pdf').catch((e: unknown) => {
+            if (!(e instanceof SyntaxError)) throw e;
+            throw new Error(
+              'This phone’s web engine is too old to open PDFs. Update “Android System WebView” in the Play Store, or send a screenshot of the PDF instead.',
+            );
+          });
           const content = await readPdf(pdf);
           if (content.images[0]) setPreview(content.images[0]);
           return { kind: 'pdf', label: pdf.name, images: content.images, text: content.text };
