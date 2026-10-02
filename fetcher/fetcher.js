@@ -1,5 +1,5 @@
 /**
- * CalDrop fetcher — it reads a web page and hands back its text. That is all.
+ * DropToCal fetcher — it reads a web page and hands back its text. That is all.
  *
  * A browser may not fetch another site, and no amount of the app being clever
  * changes that: something on a server has to do it. The endpoint does it on

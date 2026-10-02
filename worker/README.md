@@ -1,13 +1,13 @@
-# CalDrop shared endpoint
+# DropToCal shared endpoint
 
-A small Cloudflare Worker that fronts an OpenAI-compatible API so CalDrop can
+A small Cloudflare Worker that fronts an OpenAI-compatible API so DropToCal can
 call it from a web page. It exists for two reasons:
 
 1. **CORS.** Most inference endpoints never answer the browser's preflight, so a
    page calling them directly fails with `Failed to fetch`. This worker answers
    it and adds the headers.
 2. **The key wall.** It holds one API key server-side, so a first-time user can
-   try CalDrop without pasting a key of their own.
+   try DropToCal without pasting a key of their own.
 
 It serves these routes:
 

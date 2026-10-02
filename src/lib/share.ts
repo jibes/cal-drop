@@ -6,7 +6,7 @@ export interface IncomingShare {
   url: string;
 }
 
-/** Register the worker that makes CalDrop an install target and a share target. */
+/** Register the worker that makes DropToCal an install target and a share target. */
 export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
 

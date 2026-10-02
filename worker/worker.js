@@ -1,5 +1,5 @@
 /**
- * CalDrop's endpoint.
+ * DropToCal's endpoint.
  *
  * The app is a static page with no server of its own, so this worker is where
  * every decision that is not the user's lives: which model answers, which key

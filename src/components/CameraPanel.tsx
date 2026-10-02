@@ -390,7 +390,7 @@ export function CameraPanel({ onShots, busy, results, onLive, wantCamera }: Prop
     onShots(
       [shot.url],
       size < SHARP_ENOUGH
-        ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, take it with the camera app and share it to CalDrop.`
+        ? `That came out at ${size}px, which may be too soft for small print. If nothing is found, take it with the camera app and share it to DropToCal.`
         : '',
     );
   }, [onShots]);

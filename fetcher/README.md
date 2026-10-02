@@ -1,4 +1,4 @@
-# CalDrop fetcher
+# DropToCal fetcher
 
 It reads a web page and hands back its text. That is the whole worker.
 

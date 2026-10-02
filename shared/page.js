@@ -57,7 +57,7 @@ async function fetchPage(target, maxBytes, hops = 5) {
         headers: {
           Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
           // Some sites serve a different page, or none, without a browser-ish UA.
-          'User-Agent': 'Mozilla/5.0 (compatible; CalDrop/1.0; +https://github.com/jibes/cal-drop)',
+          'User-Agent': 'Mozilla/5.0 (compatible; DropToCal/1.0; +https://github.com/jibes/cal-drop)',
         },
         redirect: 'manual',
       });

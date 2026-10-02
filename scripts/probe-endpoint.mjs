@@ -1,5 +1,5 @@
 /**
- * Check whether a CalDrop endpoint (worker/) can actually drive the app.
+ * Check whether a DropToCal endpoint (worker/) can actually drive the app.
  *
  *   CALDROP_BASE_URL=https://your-worker.workers.dev/v1 \
  *   CALDROP_ACCESS_CODE=... \
@@ -99,7 +99,7 @@ try {
   if (sawChunks === 1) warn('arrived as a single delta, so the live preview will just pop in at the end');
   results.stream = true;
 } catch (e) {
-  fail(`${e.message} — CalDrop needs streaming; it has no non-streaming path`);
+  fail(`${e.message} — DropToCal needs streaming; it has no non-streaming path`);
   results.stream = false;
 }
 
@@ -140,7 +140,7 @@ try {
   results.tools = true;
 } catch (e) {
   warn(`${e.message}`);
-  warn('CalDrop will fall back to response_format: json_object — checked next');
+  warn('DropToCal will fall back to response_format: json_object — checked next');
   results.tools = false;
 }
 
@@ -190,8 +190,8 @@ try {
   results.vision = false;
 }
 
-// 6 — the real thing: CalDrop's own extraction, bundled straight from src
-console.log("\n6. CalDrop's own extraction path (real prompt, real parsing)");
+// 6 — the real thing: DropToCal's own extraction, bundled straight from src
+console.log("\n6. DropToCal's own extraction path (real prompt, real parsing)");
 const bundled = await build({
   entryPoints: ['src/lib/ai.ts'],
   bundle: true,
@@ -264,7 +264,7 @@ try {
 
 console.log('\n--- verdict ---');
 const usable = results.basic && results.stream && (results.tools || results.json) && results.extract;
-console.log(usable ? 'Usable with CalDrop.' : 'Not usable as-is — see the failures above.');
+console.log(usable ? 'Usable with DropToCal.' : 'Not usable as-is — see the failures above.');
 console.log(
   results.vision
     ? 'Handles photos and scanned PDFs too.'

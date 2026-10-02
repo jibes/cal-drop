@@ -105,7 +105,7 @@ export function buildIcs(events: EventDraft[]): string {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//CalDrop//EN',
+    'PRODID:-//DropToCal//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     ...events.flatMap(eventLines),

@@ -1,4 +1,4 @@
-# CalDrop relay
+# DropToCal relay
 
 An OpenAI-compatible API, made callable from a browser. Nothing else.
 

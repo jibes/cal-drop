@@ -1,6 +1,6 @@
 {
   "appId": "net.bruenecke.caldrop",
-  "appName": "CalDrop",
+  "appName": "DropToCal",
   "webDir": "dist",
   "android": { "allowMixedContent": false },
   "ios": { "contentInset": "always" }

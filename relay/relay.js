@@ -1,5 +1,5 @@
 /**
- * CalDrop relay — an OpenAI-compatible API, made callable from a browser.
+ * DropToCal relay — an OpenAI-compatible API, made callable from a browser.
  *
  * The other worker in this repository is an endpoint: it holds the API key,
  * decides the model, and asks for an access code. This one holds nothing. It

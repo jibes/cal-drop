@@ -1,4 +1,4 @@
-# CalDrop
+# DropToCal
 
 Point it at an event poster — a photo, a screenshot, a PDF or a link — and get a
 calendar file back. An OpenAI-compatible model reads the dates; you check them; the
@@ -8,6 +8,10 @@ Everything runs in the browser. There is no backend.
 
 The whole point is the step count. Share a poster in, glance at one line, tap
 Add — the calendar app opens with the event already filled in.
+
+It used to be called CalDrop, and what nobody sees still is: the repository,
+the storage keys in the browser, the Workers. Renaming those would lose
+everyone's settings and links for no visible gain.
 
 ## How it works
 
@@ -82,15 +86,15 @@ paste / drop ───┘                                │                    
 
 ## Getting it in front of you
 
-Being a destination is friction: you shouldn't have to open CalDrop and *then*
+Being a destination is friction: you shouldn't have to open DropToCal and *then*
 find the poster again. So it is also a target.
 
 - **Install it** (Add to Home Screen). It's a PWA — opens instantly, works offline.
-- **Android share sheet**: once installed, CalDrop accepts shared images, PDFs,
+- **Android share sheet**: once installed, DropToCal accepts shared images, PDFs,
   links and text directly via Web Share Target.
 - **iOS**: Safari has no Share Target, so use a Shortcut (or the bookmarklet)
   pointing at `?url=` until the native build ships a Share Extension.
-- **`?url=` / `?text=`**: anything can hand CalDrop a link.
+- **`?url=` / `?text=`**: anything can hand DropToCal a link.
 
   ```js
   javascript:location.href='https://jibes.github.io/cal-drop/?url='+encodeURIComponent(location.href)
@@ -150,7 +154,7 @@ ways out:
 
 ## Check an endpoint before trusting it
 
-OpenAI-compatible endpoints differ on exactly the things CalDrop leans on:
+OpenAI-compatible endpoints differ on exactly the things DropToCal leans on:
 streaming, tool calling, image input, and whether the model reads a European
 date correctly. `npm run probe` checks all four against a real endpoint, and the
 last check runs the app's own extraction code — not a copy of it — over a sample

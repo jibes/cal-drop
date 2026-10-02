@@ -1,4 +1,4 @@
-/* CalDrop service worker: offline shell + Web Share Target receiver. */
+/* DropToCal service worker: offline shell + Web Share Target receiver. */
 const CACHE = 'caldrop-v1';
 const SHARE_CACHE = 'caldrop-share';
 

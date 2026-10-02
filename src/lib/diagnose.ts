@@ -407,7 +407,7 @@ async function measureCost(emit: (line: string) => void, auth: Record<string, st
 
 export async function diagnose(settings: Settings, onLine: (line: string) => void): Promise<string> {
   const lines: string[] = [
-    `CalDrop endpoint report — ${new Date().toISOString()}`,
+    `DropToCal endpoint report — ${new Date().toISOString()}`,
     `build    ${__BUILD__} UTC`,
     `method   ${usingOwnApi(settings) ? 'your own OpenAI-compatible API' : 'the shared endpoint'}`,
     `endpoint ${activeEndpoint(settings) || '(none configured)'}`,

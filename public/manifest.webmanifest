@@ -1,6 +1,6 @@
 {
-  "name": "CalDrop — poster to calendar",
-  "short_name": "CalDrop",
+  "name": "DropToCal — poster to calendar",
+  "short_name": "DropToCal",
   "description": "Turn a poster, PDF or link into a calendar event.",
   "start_url": "./",
   "scope": "./",

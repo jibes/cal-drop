@@ -286,7 +286,7 @@ export default function App() {
     <div className={`app${viewfinder ? ' scanning' : ''}`}>
       <header className="top">
         <h1>
-          <img className="logo" src="./icon.svg" alt="" /> CalDrop
+          <img className="logo" src="./icon.svg" alt="" /> DropToCal
         </h1>
         <button
           className="ghost small icon-button"
