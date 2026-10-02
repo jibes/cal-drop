@@ -25,7 +25,7 @@ import { fetchPage } from '../shared/page.js';
 
 const DEFAULTS = {
   MAX_PAGE_BYTES: 1024 * 1024,
-  ALLOWED_ORIGINS: 'https://jibes.github.io,https://localhost,capacitor://localhost',
+  ALLOWED_ORIGINS: 'https://jibes.github.io,https://droptocal.org,https://localhost,capacitor://localhost',
 };
 
 export default {

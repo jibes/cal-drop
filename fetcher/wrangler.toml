@@ -6,7 +6,7 @@ compatibility_date = "2025-01-01"
 # Which pages a browser will let call this. Not a security boundary — anyone
 # calling directly can claim whatever origin they like — so it narrows the
 # blast radius rather than closing the door. The access code closes the door.
-ALLOWED_ORIGINS = "https://jibes.github.io,https://localhost,capacitor://localhost"
+ALLOWED_ORIGINS = "https://jibes.github.io,https://droptocal.org,https://localhost,capacitor://localhost"
 
 # The most of a page that is read before the rest is dropped. A link to a film
 # is otherwise read a megabyte at a time to find no text in it.
