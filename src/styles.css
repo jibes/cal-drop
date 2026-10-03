@@ -1199,40 +1199,65 @@ button:active:not(:disabled),
 .checks li.warn span { color: var(--warn); }
 .checks li.skip { color: var(--muted); }
 
-/* ---- the camera, on its side ----
+/* ---- the camera's controls, upright and on its side ----
  *
- * Only the camera turns (OrientationPlugin keeps everything else upright), and
- * on its side the phone is held differently: the thumb is on the edge with the
- * home button, which is now a short side. So the shutter goes there, centred
- * on it — exactly where it was when the phone was upright. The round buttons
- * line up in one row at the top right, with the ✕ in the corner, and the other
- * ways in sit together, centred, along the bottom. The title stays top left.
- * home-left / home-right are set by App from the screen's orientation.
+ * The same arrangement either way. The round buttons — settings, light, ✕ —
+ * are one row at the top right, the ✕ in the corner. The other ways in sit
+ * together, centred: above the shutter when the phone is upright, along the
+ * bottom edge when it is on its side. Only the camera turns
+ * (OrientationPlugin keeps everything else upright), and on its side the
+ * phone is held differently: the thumb is on the edge with the home button,
+ * now a short side, so the shutter goes there, centred — exactly where it was
+ * upright. home-left / home-right are set by App from the screen's
+ * orientation; without either, the screen is upright.
  */
-.app.scanning:is(.home-left, .home-right) {
-  --chips: 1;
-}
+.app.scanning { --chips: 1; }
+.app.scanning:has(.stage-top .vf-chip + .vf-chip) { --chips: 2; }
 
-.app.scanning:is(.home-left, .home-right):has(.stage-top .vf-chip + .vf-chip) {
-  --chips: 2;
-}
-
-.app.scanning:is(.home-left, .home-right) .top {
+.app.scanning .top {
   padding-left: calc(14px + env(safe-area-inset-left));
   padding-right: calc(14px + env(safe-area-inset-right));
 }
 
 /* The gear makes room for the chips to its right, so the three are one row. */
-.app.scanning:is(.home-left, .home-right) .top .icon-button {
+.app.scanning .top .icon-button {
   margin-right: calc(var(--chips) * (var(--tap) + 8px));
 }
 
-.app.scanning:is(.home-left, .home-right) .stage-top {
+.app.scanning .stage-top {
   position: fixed;
   top: calc(10px + env(safe-area-inset-top));
   left: auto;
   right: calc(14px + env(safe-area-inset-right));
   z-index: 4;
+}
+
+/* The other ways in: out of their corners and together in the middle. The
+   camera is taken out of the flow so that they can be. */
+.app.scanning .dropzone {
+  align-items: flex-end;
+  gap: 8px;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.app.scanning .camera {
+  position: absolute;
+  inset: 0;
+}
+
+.app.scanning .clipboard,
+.app.scanning .drop-actions {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+.app.scanning .toasts { top: calc(64px + env(safe-area-inset-top)); }
+
+/* On its side: the shutter to the home button's edge, the rest to the bottom. */
+.app.scanning:is(.home-left, .home-right) .dropzone {
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
 }
 
 .app.scanning:is(.home-left, .home-right) .shutter-row {
@@ -1246,31 +1271,6 @@ button:active:not(:disabled),
 
 .app.scanning.home-right .shutter-row { right: calc(18px + env(safe-area-inset-right)); }
 .app.scanning.home-left .shutter-row { left: calc(18px + env(safe-area-inset-left)); }
-
-/* The other ways in: out of their corners, and together in the middle of the
-   bottom edge. The camera is taken out of the flow so that they can be. */
-.app.scanning:is(.home-left, .home-right) .dropzone {
-  align-items: flex-end;
-  gap: 8px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-}
-
-.app.scanning:is(.home-left, .home-right) .camera {
-  position: absolute;
-  inset: 0;
-}
-
-.app.scanning:is(.home-left, .home-right) .clipboard,
-.app.scanning:is(.home-left, .home-right) .drop-actions {
-  position: relative;
-  left: auto;
-  right: auto;
-  bottom: auto;
-}
-
-.app.scanning:is(.home-left, .home-right) .toasts {
-  top: calc(64px + env(safe-area-inset-top));
-}
 
 /* ---- choosing a model ---- */
 
