@@ -5,6 +5,7 @@ import { fetchPageText } from './url';
 
 const own: Settings = {
   apiBase: 'https://api.example.test/v1',
+  apiStyle: 'openai',
   apiKey: 'sk-test',
   model: 'test-model',
   visionModel: '',

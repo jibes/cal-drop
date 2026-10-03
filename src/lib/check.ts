@@ -1,7 +1,7 @@
 import { extractEvents } from './ai';
 import { canFetchNatively, inNativeApp, nativeFetch } from './native';
 import { providerFor } from './providers';
-import { activeEndpoint, authSecret, trying, wantedModel } from './settings';
+import { activeEndpoint, apiHeaders, authSecret, trying, wantedModel } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -24,11 +24,12 @@ export type ModelList =
 /** The models this key may use, as the API lists them. */
 export async function listModels(settings: Settings): Promise<ModelList> {
   const base = activeEndpoint(settings);
-  const key = authSecret(settings);
   let res: Response;
   const native = canFetchNatively();
+  // Anthropic lists twenty at a time unless asked for more.
+  const list = `${base}/models${settings.apiStyle === 'anthropic' ? '?limit=1000' : ''}`;
   try {
-    res = await (native ? nativeFetch : fetch)(`${base}/models`, { headers: key ? { Authorization: `Bearer ${key}` } : {} });
+    res = await (native ? nativeFetch : fetch)(list, { headers: apiHeaders(settings) });
   } catch (err) {
     // Asked by the app, no browser rule is involved: it is not there.
     if (native) return { ok: false, why: 'unreachable', detail: (err as Error).message };
@@ -114,7 +115,7 @@ export async function checkConnection(settings: Settings, onLine: (lines: CheckL
         : list.why === 'browser'
           ? inNativeApp()
             ? 'the app was refused, though the address answers'
-            : `${provider?.name ?? 'This API'} does not let web pages call it. Choose one that does (OpenAI, OpenRouter, Groq, Mistral).`
+            : `${provider?.name ?? 'This API'} does not let web pages call it. Choose one that does (OpenAI, Anthropic, OpenRouter, Groq, Mistral).`
           : list.why === 'unreachable'
             ? `nothing answered at that address${list.detail ? ` (${list.detail})` : ''}`
             : `the API answered ${list.detail} to a list of models`;

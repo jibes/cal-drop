@@ -1,4 +1,4 @@
-import { activeEndpoint } from './settings';
+import { activeEndpoint, apiHeaders, chatUrl } from './settings';
 
 /**
  * Why a request never left the browser.
@@ -44,7 +44,7 @@ const PUBLIC_GET = () => `${base()}/models`;
 
 /** A POST shaped like the real one, to ask the question a GET cannot: will
  *  the preflight be answered? It refuses the body; that is fine. */
-const PREFLIGHT_POST = () => `${base()}/chat/completions`;
+const PREFLIGHT_POST = () => chatUrl();
 
 /**
  * What an error answer says, in one line. A worker's own refusals are short
@@ -138,7 +138,7 @@ async function ask(signal: AbortSignal): Promise<Reached> {
     try {
       await fetch(PREFLIGHT_POST(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer preflight-probe' },
+        headers: { 'Content-Type': 'application/json', ...apiHeaders(undefined, 'preflight-probe') },
         body: '{}',
         cache: 'no-store',
         signal,

@@ -1,4 +1,5 @@
-import { activeEndpoint, authSecret, wantedModel } from './settings';
+import { activeEndpoint, apiHeaders, authSecret, chatUrl, settingsInForce, wantedModel } from './settings';
+import { fromMessage, messagesStreamPiece, toMessagesBody } from './anthropic';
 import { shrinkFurther } from './image';
 import { canFetchNatively, nativeFetch } from './native';
 import {
@@ -325,13 +326,9 @@ export interface ExtractOptions {
 }
 
 const NO_ENDPOINT =
-  'No API address is set. Settings has a place for the base URL of an ' +
-  'OpenAI-compatible API — the part ending in /v1 — along with your key.';
+  'No API address is set. Settings has a place for the base URL of your API ' +
+  '— the part ending in /v1 — along with your key.';
 
-const chatUrl = () => {
-  const base = activeEndpoint();
-  return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
-};
 
 /**
  * fetch() rejects with a bare "Failed to fetch" for every network-level
@@ -605,6 +602,7 @@ function toDraft(raw: RawEvent, i: number): EventDraft {
 
 /** The same fact from a whole, non-streamed body. */
 function wasCutShort(raw: string): boolean {
+  if (fromMessage(raw)?.truncated) return true;
   try {
     return (
       (JSON.parse(raw) as { choices?: { finish_reason?: string }[] }).choices?.[0]?.finish_reason ===
@@ -650,6 +648,8 @@ function describeSilence(raw: string): string {
  * JSON body anyway, which an SSE reader skips entirely and reports as nothing.
  */
 function fromCompletion(raw: string): string {
+  const message = fromMessage(raw);
+  if (message) return message.text;
   try {
     const message = (
       JSON.parse(raw) as {
@@ -685,7 +685,11 @@ async function readStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let raw = '';
-  let out = '';
+  /** What came as a tool's arguments, and what came as words. A model asked to
+   *  call a tool sometimes says a sentence first; the arguments are the answer. */
+  let called = '';
+  let said = '';
+  const out = () => (called.trim() ? called : said);
   let error = '';
   let lastPreview = '';
 
@@ -729,6 +733,7 @@ async function readStream(
       if (payload === '[DONE]') continue;
       let event:
         | {
+            type?: string;
             choices?: { delta?: StreamDelta; finish_reason?: string }[];
             error?: { message?: string };
           }
@@ -738,17 +743,27 @@ async function readStream(
       } catch {
         continue;
       }
+      // Anthropic's events name their type and carry no choices; see anthropic.ts.
+      if (event && typeof event.type === 'string' && !event.choices) {
+        const piece = messagesStreamPiece(event as Record<string, unknown>);
+        called += piece.json ?? '';
+        said += piece.text ?? '';
+        if (piece.truncated) truncated = true;
+        if (piece.error) error = piece.error;
+        continue;
+      }
       // A refusal can arrive as an event on a 200 response, so the status code
       // never sees it; without this it reads as an answer containing nothing.
       if (event?.error?.message) error = event.error.message;
       // "length" means the model was still writing when it ran out of room.
       if (event?.choices?.[0]?.finish_reason === 'length') truncated = true;
       const delta = event?.choices?.[0]?.delta;
-      out += delta?.tool_calls?.[0]?.function?.arguments ?? delta?.content ?? '';
+      called += delta?.tool_calls?.[0]?.function?.arguments ?? '';
+      said += delta?.content ?? '';
     }
 
     if (onProgress) {
-      const preview = previewFrom(out);
+      const preview = previewFrom(out());
       const key = `${preview.title}|${preview.date}`;
       if (preview.title && key !== lastPreview) {
         lastPreview = key;
@@ -758,7 +773,7 @@ async function readStream(
   }
   // An answer that never streamed is still an answer.
   return {
-    text: out.trim() ? out : fromCompletion(raw),
+    text: out().trim() ? out() : fromCompletion(raw),
     raw,
     error,
     broken,
@@ -920,10 +935,13 @@ async function callModel(
    */
   let body: string;
   let sent: Param[] = [];
+  const anthropic = settingsInForce().apiStyle === 'anthropic';
   try {
     const built = requestBody(content, attempt, stream, cap, quirks);
-    sent = sentParams(built);
-    body = JSON.stringify(built);
+    // Anthropic's API is spoken through a translation of the same request,
+    // and its parameters are known rather than learned (anthropic.ts).
+    sent = anthropic ? [] : sentParams(built);
+    body = JSON.stringify(anthropic ? toMessagesBody(built) : built);
   } catch (err) {
     throw new Error(
       `This source could not be turned into a request: ${(err as Error).message}. ` +
@@ -942,10 +960,7 @@ async function callModel(
     res = await (native ? nativeFetch : fetch)(chatUrl(), {
       method: 'POST',
       signal: options.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(code ? { Authorization: `Bearer ${code}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json', ...apiHeaders(undefined, code) },
       body,
     });
   } catch (err) {

@@ -33,12 +33,19 @@ export interface EventDraft {
 export type LinkReader = 'off' | 'jina' | 'server';
 
 /**
+ * Which dialect the API speaks: OpenAI's Chat Completions, which most
+ * providers copy, or Anthropic's Messages API. See anthropic.ts.
+ */
+export type ApiStyle = 'openai' | 'anthropic';
+
+/**
  * What differs per person: which OpenAI-compatible API is asked, with whose
  * key, for which model — and, in a browser, who reads links.
  */
 export interface Settings {
   /** The base URL, as in https://api.example.com/v1 */
   apiBase: string;
+  apiStyle: ApiStyle;
   apiKey: string;
   /** Nothing else knows which model to ask for. */
   model: string;

@@ -110,7 +110,7 @@ Everything is in Settings, and nothing is built in:
 
 | Setting | What it is |
 | --- | --- |
-| Provider, API address | Any OpenAI-compatible API, up to `/v1`. OpenAI, OpenRouter, Groq and Mistral are listed; anything else is typed in. |
+| Provider, API address | Any OpenAI-compatible API, or Anthropic's own Messages API, up to `/v1`. OpenAI, Anthropic, OpenRouter, Groq, Mistral and Melious are listed; anything else is typed in, with its style. |
 | API key | Yours. In the app it is kept in the phone's encrypted store; in a browser, in that browser. |
 | Model, model for photos | Offered from the API's own list. One model is enough if it reads pictures. |
 | Links (web only) | Not read, Jina Reader, or a reader of your own. |

@@ -4,7 +4,7 @@ import { diagnose } from '../lib/diagnose';
 import { inNativeApp } from '../lib/native';
 import { PROVIDERS, providerFor } from '../lib/providers';
 import { endpointHost, resetSettings, secretsAreEncrypted } from '../lib/settings';
-import type { LinkReader, Settings } from '../lib/types';
+import type { ApiStyle, LinkReader, Settings } from '../lib/types';
 
 interface Props {
   settings: Settings;
@@ -14,6 +14,7 @@ interface Props {
 
 export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const [apiBase, setApiBase] = useState(settings.apiBase);
+  const [apiStyle, setApiStyle] = useState<ApiStyle>(settings.apiStyle);
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
   const [visionModel, setVisionModel] = useState(settings.visionModel);
@@ -32,6 +33,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
   const app = inNativeApp();
   const edited = (): Settings => ({
     apiBase,
+    apiStyle,
     apiKey,
     model,
     visionModel,
@@ -80,7 +82,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
       clearTimeout(soon);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiBase, apiKey]);
+  }, [apiBase, apiKey, apiStyle]);
 
   /** The key, with what to know about where it goes. */
   const secretFields = (
@@ -123,8 +125,8 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             Your key stays in this browser and is sent straight to{' '}
             {apiBase.trim() ? endpointHost(edited()) : 'the API above'} —
             which means the browser has to be allowed to call it. Most hosted providers do not
-            allow that, precisely because a key sent from a page is a key given away; OpenAI and
-            OpenRouter do, and APIs you run yourself usually can.
+            allow that, precisely because a key sent from a page is a key given away; OpenAI,
+            Anthropic and OpenRouter do, and APIs you run yourself usually can.
           </>
         )}
       </p>
@@ -143,6 +145,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             onChange={(e) => {
               const chosen = PROVIDERS.find((p) => p.id === e.target.value);
               setApiBase(chosen ? chosen.base : '');
+              setApiStyle(chosen ? chosen.style : 'openai');
               setModels([]);
             }}
           >
@@ -162,7 +165,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
         {provider && !provider.browser && !app && (
           <p className="hint warn">
             {provider.name} does not let web pages call it, so it will not work here. OpenAI,
-            OpenRouter, Groq and Mistral do.
+            Anthropic, OpenRouter, Groq and Mistral do.
           </p>
         )}
         <label>
@@ -177,6 +180,16 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             spellCheck={false}
           />
         </label>
+        {/* A preset knows its dialect; an address typed by hand has to be told. */}
+        {!provider && apiBase.trim() && (
+          <label>
+            API style
+            <select value={apiStyle} onChange={(e) => setApiStyle(e.target.value as ApiStyle)}>
+              <option value="openai">OpenAI-compatible (/chat/completions)</option>
+              <option value="anthropic">Anthropic Messages (/messages)</option>
+            </select>
+          </label>
+        )}
         {secretFields}
         <label>
           Model
@@ -341,6 +354,7 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
             onClick={() => {
               const fresh = resetSettings();
               setApiBase(fresh.apiBase);
+              setApiStyle(fresh.apiStyle);
               setApiKey(fresh.apiKey);
               setModel(fresh.model);
               setVisionModel(fresh.visionModel);

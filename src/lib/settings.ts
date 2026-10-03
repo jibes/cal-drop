@@ -1,9 +1,11 @@
-import type { LinkReader, Settings } from './types';
+import { ANTHROPIC_VERSION } from './anthropic';
+import type { ApiStyle, LinkReader, Settings } from './types';
 
 const KEY = 'caldrop.settings.v1';
 
 export const defaultSettings: Settings = {
   apiBase: '',
+  apiStyle: 'openai',
   apiKey: '',
   model: '',
   visionModel: '',
@@ -122,6 +124,7 @@ export function loadSettings(): Settings {
     const stored = upgraded(JSON.parse(raw) as Record<string, unknown>) as Partial<Settings>;
     const settings: Settings = {
       apiBase: clean(stored.apiBase).replace(/\/+$/, ''),
+      apiStyle: styleOf(stored.apiStyle, clean(stored.apiBase)),
       apiKey: clean(stored.apiKey),
       model: clean(stored.model),
       visionModel: clean(stored.visionModel),
@@ -146,6 +149,7 @@ export function loadSettings(): Settings {
 /** Nothing anyone chose — so nothing is stored. */
 const empty = (s: Settings): boolean =>
   !s.apiBase.trim() &&
+  s.apiStyle === 'openai' &&
   !s.apiKey.trim() &&
   !s.pageReader.trim() &&
   !s.pageReaderCode.trim() &&
@@ -157,6 +161,7 @@ const empty = (s: Settings): boolean =>
 export function saveSettings(s: Settings): void {
   const settings: Settings = {
     apiBase: s.apiBase.trim().replace(/\/+$/, ''),
+    apiStyle: s.apiStyle,
     apiKey: s.apiKey.trim(),
     model: s.model.trim(),
     visionModel: s.visionModel.trim(),
@@ -216,8 +221,39 @@ export function activeEndpoint(s: Settings = inForce): string {
   return s.apiBase.trim().replace(/\/+$/, '');
 }
 
-/** What goes in the Authorization header. */
+/** The key, whichever header it travels in. */
 export const authSecret = (s: Settings = inForce): string => s.apiKey.trim();
+
+/** A stored style, or — for settings from before there was a choice — the one
+ *  the address speaks, which for every address but Anthropic's is OpenAI's. */
+function styleOf(stored: unknown, base: string): ApiStyle {
+  if (stored === 'openai' || stored === 'anthropic') return stored;
+  return /^https:\/\/api\.anthropic\.com\b/i.test(base) ? 'anthropic' : 'openai';
+}
+
+/** Where a request for an answer goes. */
+export function chatUrl(s: Settings = inForce): string {
+  const base = activeEndpoint(s);
+  if (s.apiStyle === 'anthropic') return base.endsWith('/messages') ? base : `${base}/messages`;
+  return base.endsWith('/chat/completions') ? base : `${base}/chat/completions`;
+}
+
+/**
+ * The key, as this API wants to be shown it. Anthropic takes it in its own
+ * header and wants the version named; a page calling it also has to say it
+ * means to, or the browser is refused — the app is no page, and saying so
+ * changes nothing there.
+ */
+export function apiHeaders(s: Settings = inForce, key = authSecret(s)): Record<string, string> {
+  if (s.apiStyle === 'anthropic') {
+    return {
+      ...(key ? { 'x-api-key': key } : {}),
+      'anthropic-version': ANTHROPIC_VERSION,
+      'anthropic-dangerous-direct-browser-access': 'true',
+    };
+  }
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
 
 /**
  * Which model to ask for.

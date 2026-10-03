@@ -1,5 +1,6 @@
 import { describeReach, reachEndpoint } from './reach';
-import { activeEndpoint, authSecret, wantedModel } from './settings';
+import { fromMessage, messagesStreamPiece, toMessagesBody } from './anthropic';
+import { activeEndpoint, apiHeaders, authSecret, chatUrl, wantedModel } from './settings';
 import type { Settings } from './types';
 
 /**
@@ -166,11 +167,6 @@ const PROBES: Probe[] = [
   },
 ];
 
-const chatUrl = () =>
-  activeEndpoint().endsWith('/chat/completions')
-    ? activeEndpoint()
-    : `${activeEndpoint()}/chat/completions`;
-
 /** Anything an endpoint says about a failure, from wherever it chose to say it. */
 function readOutcome(status: number, raw: string): string {
   const trimmed = raw.trim();
@@ -220,14 +216,24 @@ function answerIn(raw: string): string {
     const payload = trimmed.slice(5).trim();
     if (payload === '[DONE]') continue;
     try {
-      const delta = (JSON.parse(payload) as { choices?: { delta?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[] })
-        .choices?.[0]?.delta;
+      const event = JSON.parse(payload) as {
+        type?: string;
+        choices?: { delta?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[];
+      };
+      if (event.type && !event.choices) {
+        const piece = messagesStreamPiece(event as Record<string, unknown>);
+        out += piece.json ?? piece.text ?? '';
+        continue;
+      }
+      const delta = event.choices?.[0]?.delta;
       out += delta?.content ?? delta?.tool_calls?.[0]?.function?.arguments ?? '';
     } catch {
       /* not an event */
     }
   }
   if (out.trim()) return out;
+  const message = fromMessage(raw);
+  if (message) return message.text;
   try {
     const message = (JSON.parse(raw) as { choices?: { message?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[] })
       .choices?.[0]?.message;
@@ -243,6 +249,7 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     `DropToCal API report — ${new Date().toISOString()}`,
     `build    ${__BUILD__} UTC`,
     `api      ${activeEndpoint(settings) || '(none configured)'}`,
+    `style    ${settings.apiStyle === 'anthropic' ? "Anthropic's Messages API" : 'OpenAI Chat Completions'}`,
     `model    ${settings.model.trim() || '(none named)'}`,
     `photos   ${settings.visionModel.trim() || '(the same model)'}`,
     `key      ${authSecret(settings) ? 'set' : 'not set'}`,
@@ -278,15 +285,15 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
     emit('');
   }
 
-  const code = authSecret(settings);
-  const auth: Record<string, string> = code ? { Authorization: `Bearer ${code}` } : {};
+  const auth = apiHeaders(settings);
+  const anthropic = settings.apiStyle === 'anthropic';
   let models: string[] = [];
   let imageWorks = false;
 
   // Which models exist is the question a failed image probe leads to, so
   // answer it in the same report rather than in a second round trip.
   try {
-    const res = await fetch(`${activeEndpoint(settings).replace(/\/+$/, '')}/models`, { headers: auth });
+    const res = await fetch(`${activeEndpoint(settings).replace(/\/+$/, '')}/models${anthropic ? '?limit=1000' : ''}`, { headers: auth });
     const body = (await res.json()) as { data?: { id?: string }[] };
     models = (body.data ?? []).map((m) => m.id).filter((id): id is string => Boolean(id));
     emit(models.length ? `models   ${models.join(', ')}` : `models   (none listed, HTTP ${res.status})`);
@@ -299,13 +306,17 @@ export async function diagnose(settings: Settings, onLine: (line: string) => voi
   const forText = { model: wantedModel(false, settings) };
   const forImage = { model: wantedModel(true, settings) };
   for (const probe of PROBES) {
+    // Spoken to Anthropic, OpenAI's spellings of the same thing are translated
+    // into the one Anthropic has — so these would test the translation twice
+    // over, and response_format has nothing to become.
+    if (anthropic && /as string|input_image|json_object/.test(probe.name)) continue;
     const named = probe.name.startsWith('image:') ? forImage : forText;
     let outcome: string;
     try {
       const res = await fetch(chatUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...auth },
-        body: JSON.stringify({ ...named, ...probe.body }),
+        body: JSON.stringify(anthropic ? toMessagesBody({ ...named, ...probe.body }) : { ...named, ...probe.body }),
       });
       outcome = readOutcome(res.status, await res.text());
     } catch (err) {
