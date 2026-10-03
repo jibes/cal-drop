@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { checkConnection, listModels, type CheckLine } from '../lib/check';
 import { diagnose } from '../lib/diagnose';
+import { ModelField } from './ModelField';
 import { inNativeApp } from '../lib/native';
 import { PROVIDERS, providerFor } from '../lib/providers';
 import { endpointHost, resetSettings, secretsAreEncrypted } from '../lib/settings';
@@ -191,37 +192,20 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           </label>
         )}
         {secretFields}
-        <label>
-          Model
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            list="caldrop-models"
-            placeholder={models.length ? 'pick or type a model' : 'the model to ask'}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-        </label>
-        <label>
-          Model for photos
-          <input
-            type="text"
-            value={visionModel}
-            onChange={(e) => setVisionModel(e.target.value)}
-            list="caldrop-models"
-            placeholder="the same one"
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-        </label>
-        <datalist id="caldrop-models">
-          {models.map((id) => (
-            <option key={id} value={id} />
-          ))}
-        </datalist>
+        <ModelField
+          label="Model"
+          value={model}
+          onChange={setModel}
+          models={models}
+          placeholder={models.length ? 'pick or type a model' : 'the model to ask'}
+        />
+        <ModelField
+          label="Model for photos"
+          value={visionModel}
+          onChange={setVisionModel}
+          models={models}
+          placeholder="the same one"
+        />
         <p className="hint">
           A photo goes to the second one; text and PDFs to the first. Leave it empty if the
           same model reads both — many read only one.

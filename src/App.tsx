@@ -5,6 +5,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { UniversalInput } from './components/UniversalInput';
 import { extractEvents } from './lib/ai';
 import { fileToDataUrl } from './lib/image';
+import { allowLandscape } from './lib/native';
 import { activeEndpoint, loadSettings, saveSettings } from './lib/settings';
 import { firstUrlIn, onShared, takeIncoming } from './lib/share';
 import type { EventDraft, ExtractionSource, Settings } from './lib/types';
@@ -290,8 +291,12 @@ export default function App() {
   // shown full screen, and the error floats over it like everything else.
   const viewfinder = scanning && !busy;
 
+  // Upright everywhere but in the camera (see OrientationPlugin).
+  useEffect(() => allowLandscape(viewfinder), [viewfinder]);
+  const side = useHomeSide();
+
   return (
-    <div className={`app${viewfinder ? ' scanning' : ''}`}>
+    <div className={`app${viewfinder ? ' scanning' : ''}${viewfinder && side ? ` home-${side}` : ''}`}>
       <header className="top">
         <h1>
           <img className="logo" src="./icon.svg" alt="" /> DropToCal
@@ -420,4 +425,35 @@ export default function App() {
       )}
     </div>
   );
+}
+
+/**
+ * Where the phone's own bottom edge is when it lies on its side: the edge with
+ * the home button, and so the one the thumb holding it is on. The shutter
+ * goes there in landscape, exactly where it was upright. Turned anticlockwise
+ * (landscape-primary) that edge is on the right; clockwise, on the left.
+ * Null when the screen is upright.
+ */
+function useHomeSide(): 'left' | 'right' | null {
+  const read = (): 'left' | 'right' | null => {
+    if (typeof window === 'undefined' || !window.matchMedia('(orientation: landscape)').matches) return null;
+    const type = screen.orientation?.type ?? '';
+    const angle = screen.orientation?.angle ?? (window as { orientation?: number }).orientation ?? 90;
+    if (type === 'landscape-secondary' || angle === 270 || angle === -90) return 'left';
+    return 'right';
+  };
+  const [side, setSide] = useState(read);
+  useEffect(() => {
+    const update = () => setSide(read());
+    const query = window.matchMedia('(orientation: landscape)');
+    query.addEventListener('change', update);
+    screen.orientation?.addEventListener?.('change', update);
+    window.addEventListener('resize', update);
+    return () => {
+      query.removeEventListener('change', update);
+      screen.orientation?.removeEventListener?.('change', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+  return side;
 }

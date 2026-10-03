@@ -1198,3 +1198,121 @@ button:active:not(:disabled),
 .checks li.fail span { color: var(--bad); }
 .checks li.warn span { color: var(--warn); }
 .checks li.skip { color: var(--muted); }
+
+/* ---- the camera, on its side ----
+ *
+ * Only the camera turns (OrientationPlugin keeps everything else upright), and
+ * on its side the phone is held differently: the thumb is on the edge with the
+ * home button, which is now a short side. So the shutter goes there, centred
+ * on it — exactly where it was when the phone was upright. The round buttons
+ * line up in one row at the top right, with the ✕ in the corner, and the other
+ * ways in sit together, centred, along the bottom. The title stays top left.
+ * home-left / home-right are set by App from the screen's orientation.
+ */
+.app.scanning:is(.home-left, .home-right) {
+  --chips: 1;
+}
+
+.app.scanning:is(.home-left, .home-right):has(.stage-top .vf-chip + .vf-chip) {
+  --chips: 2;
+}
+
+.app.scanning:is(.home-left, .home-right) .top {
+  padding-left: calc(14px + env(safe-area-inset-left));
+  padding-right: calc(14px + env(safe-area-inset-right));
+}
+
+/* The gear makes room for the chips to its right, so the three are one row. */
+.app.scanning:is(.home-left, .home-right) .top .icon-button {
+  margin-right: calc(var(--chips) * (var(--tap) + 8px));
+}
+
+.app.scanning:is(.home-left, .home-right) .stage-top {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: auto;
+  right: calc(14px + env(safe-area-inset-right));
+  z-index: 4;
+}
+
+.app.scanning:is(.home-left, .home-right) .shutter-row {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  padding: 0;
+  transform: translateY(-50%);
+}
+
+.app.scanning.home-right .shutter-row { right: calc(18px + env(safe-area-inset-right)); }
+.app.scanning.home-left .shutter-row { left: calc(18px + env(safe-area-inset-left)); }
+
+/* The other ways in: out of their corners, and together in the middle of the
+   bottom edge. The camera is taken out of the flow so that they can be. */
+.app.scanning:is(.home-left, .home-right) .dropzone {
+  align-items: flex-end;
+  gap: 8px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+}
+
+.app.scanning:is(.home-left, .home-right) .camera {
+  position: absolute;
+  inset: 0;
+}
+
+.app.scanning:is(.home-left, .home-right) .clipboard,
+.app.scanning:is(.home-left, .home-right) .drop-actions {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+.app.scanning:is(.home-left, .home-right) .toasts {
+  top: calc(64px + env(safe-area-inset-top));
+}
+
+/* ---- choosing a model ---- */
+
+.model-field { position: relative; margin-top: 12px; }
+.model-field > label { margin-top: 0; }
+.model-field > .row { margin-top: 4px; }
+.model-field .row input { flex: 1 1 auto; min-width: 0; }
+.model-toggle { flex: 0 0 auto; width: var(--tap); padding: 0; justify-content: center; }
+
+.model-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.model-list button {
+  display: block;
+  width: 100%;
+  min-height: var(--control-h-small);
+  padding: 0 10px;
+  text-align: left;
+  font-size: 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-list button.active,
+.model-list button:hover { background: var(--surface); }
+.model-list button.chosen { color: var(--accent); font-weight: 600; }

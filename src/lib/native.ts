@@ -345,3 +345,18 @@ export function nativeFetch(url: string, init: RequestInit = {}): Promise<Respon
       .catch((err: unknown) => stop(new TypeError((err as Error)?.message ?? 'The request could not be made.')));
   });
 }
+
+interface OrientationPlugin {
+  allowLandscape(o: { allowed: boolean }): Promise<void>;
+}
+
+/**
+ * Let the screen turn sideways, or hold it upright. The app is upright
+ * everywhere but in the camera, where a wide poster wants a wide frame; a
+ * browser decides this for itself, so there it does nothing.
+ */
+export function allowLandscape(allowed: boolean): void {
+  const orientation = (globalThis as { Capacitor?: { Plugins?: { Orientation?: OrientationPlugin } } }).Capacitor
+    ?.Plugins?.Orientation;
+  void Promise.resolve(orientation?.allowLandscape({ allowed })).catch(() => undefined);
+}
