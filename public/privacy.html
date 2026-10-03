@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy · DropToCal</title>
+    <meta name="description" content="What DropToCal does with what you give it: it sends it to the AI provider you chose, and keeps nothing." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --bg: #0f1115;
+        --surface: #171a21;
+        --line: #2b303b;
+        --text: #e8eaf0;
+        --muted: #99a1b3;
+        --accent: #6ea8fe;
+        color-scheme: dark;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f7fa;
+          --surface: #ffffff;
+          --line: #dde1e8;
+          --text: #161a22;
+          --muted: #5b6475;
+          --accent: #2563eb;
+          color-scheme: light;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+      header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+      header img { width: 36px; height: 36px; }
+      header a { color: inherit; text-decoration: none; font-weight: 700; font-size: 20px; }
+      h1 { font-size: 30px; line-height: 1.2; margin: 24px 0 4px; }
+      h2 { font-size: 19px; margin: 36px 0 8px; }
+      p, li { color: var(--text); }
+      .muted { color: var(--muted); }
+      a { color: var(--accent); }
+      ul { padding-left: 1.2em; }
+      li { margin: 4px 0; }
+      .summary {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 4px 20px;
+        margin-top: 20px;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 8px; }
+      th, td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 600; }
+      footer { margin-top: 48px; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="./icon.svg" alt="" />
+        <a href="./">DropToCal</a>
+      </header>
+
+      <h1>Privacy</h1>
+      <p class="muted">For the DropToCal app for Android and the website droptocal.org. Last updated 3 October 2026.</p>
+
+      <div class="summary">
+        <p><strong>In short:</strong> DropToCal has no accounts, no analytics, no ads and no server of its
+          own that receives what you read. A photo, PDF, text or link you give it goes from your device
+          straight to the AI provider <em>you</em> set up, with your own key, and the events come back to
+          your device. Nothing is kept: not by the app beyond your settings, and not by us at all.</p>
+      </div>
+
+      <h2>Who is responsible</h2>
+      <p>
+        DropToCal is a free, open-source app made by an individual:<br />
+        <strong>Sebastian Brünecke</strong><br />
+        Email: <a href="mailto:hello@droptocal.org">hello@droptocal.org</a>
+      </p>
+      <p>The source code is public at <a href="https://github.com/jibes/cal-drop">github.com/jibes/cal-drop</a>
+        and <a href="https://github.com/jibes/cal-drop-app">github.com/jibes/cal-drop-app</a>, so everything
+        below can be checked.</p>
+
+      <h2>What happens to what you read</h2>
+      <p>To find the events in a poster, a PDF, a text or a web page, DropToCal asks an AI model. You choose
+        which: in Settings you enter the address of an AI provider (for example OpenAI, Anthropic, OpenRouter,
+        Groq, Mistral or Melious, or any compatible service), your own API key, and a model.</p>
+      <ul>
+        <li><strong>What is sent:</strong> the content you chose to read — a photo, the pages of a PDF (as text, or
+          as images if it has no text), a text, or the text of a web page — together with instructions for the
+          model. Nothing else from your device is sent.</li>
+        <li><strong>Where it goes:</strong> directly from your device to the provider you entered. It does not pass
+          through any server of ours.</li>
+        <li><strong>Photos</strong> are scaled down and re-encoded before they are sent, which also removes their
+          metadata, such as where a photo was taken.</li>
+        <li><strong>What the provider does with it</strong> is governed by your agreement with that provider and its
+          privacy policy. Please read it before you use a provider; some offer settings that keep your requests
+          from being stored or used for training.</li>
+      </ul>
+
+      <h2>Links</h2>
+      <ul>
+        <li><strong>In the app,</strong> a link you share or paste is fetched by your phone itself, like a browser
+          would; only the page's text is then sent to your AI provider.</li>
+        <li><strong>On the website,</strong> a browser may not fetch other sites, so links are not read unless you
+          choose a reader in Settings. If you choose <em>Jina Reader</em>, the link is sent to Jina AI, which fetches
+          the page and returns its text; Jina AI's privacy policy applies to that. If you choose a reader of your
+          own, the link goes to the address you entered.</li>
+      </ul>
+
+      <h2>What stays on your device</h2>
+      <table>
+        <tr><th>What</th><th>Where</th></tr>
+        <tr>
+          <td>Your settings: provider address, models, link reader</td>
+          <td>On your device (in the app's storage, or in your browser's local storage on the website).</td>
+        </tr>
+        <tr>
+          <td>Your API key and any reader key</td>
+          <td>In the app: encrypted with a key held by Android's keystore. On the website: in your browser's local
+            storage. It is only ever sent to the service it belongs to.</td>
+        </tr>
+        <tr>
+          <td>What the app has learned about your provider (which request options it accepts)</td>
+          <td>On your device, to make the next request work at the first attempt.</td>
+        </tr>
+        <tr>
+          <td>The events found, and what you shared or pasted</td>
+          <td>Only in memory while you use them. Not saved, and gone when the app closes.</td>
+        </tr>
+      </table>
+      <p><em>Clear</em> in Settings removes your settings and keys. Uninstalling the app, clearing its data, or
+        clearing the site's data in your browser removes everything.</p>
+
+      <h2>Camera, clipboard and calendar</h2>
+      <ul>
+        <li><strong>Camera:</strong> used only while the viewfinder is open. Photos taken in DropToCal are read and
+          then discarded; they are not saved to your gallery.</li>
+        <li><strong>Clipboard:</strong> in the app, read only when you tap <em>Paste</em>. On the website, once you
+          have allowed your browser to let DropToCal read the clipboard, it shows a one-line preview of what you
+          copied; that stays on your device until you tap it.</li>
+        <li><strong>Calendar:</strong> DropToCal does not read your calendar and has no permission to. When you add an
+          event, it hands the event to your calendar app (or as a calendar file), and you save it there.</li>
+        <li>DropToCal does not use your location, your contacts or any other personal data on your phone.</li>
+      </ul>
+
+      <h2>Services involved in running DropToCal</h2>
+      <ul>
+        <li><strong>GitHub</strong> (GitHub, Inc.) hosts the website droptocal.org. Like any web host it processes
+          your IP address and technical request data to deliver the page; see GitHub's privacy statement.</li>
+        <li><strong>Cloudflare</strong> (Cloudflare, Inc.) provides the domain names, redirects droptocal.com to
+          droptocal.org, and forwards email sent to hello@droptocal.org; see Cloudflare's privacy policy.</li>
+        <li><strong>Google Play,</strong> if you install the app from there, processes data about your installation
+          under Google's privacy policy. DropToCal itself uses no Google services.</li>
+      </ul>
+      <p>None of these receive what you read with DropToCal.</p>
+
+      <h2>No tracking</h2>
+      <p>DropToCal contains no analytics, no crash reporting, no advertising and no tracking of any kind, and the
+        website sets no cookies. We do not know who uses DropToCal or what they read with it.</p>
+
+      <h2>Children</h2>
+      <p>DropToCal is not directed at children, and it collects no data from anyone.</p>
+
+      <h2>Your rights</h2>
+      <p>Because we hold no data about you, there is nothing for us to show, correct or delete. Data you sent to
+        an AI provider or a link reader is held by that service; ask them. You can also complain to the data
+        protection authority where you live. For any question, write to
+        <a href="mailto:hello@droptocal.org">hello@droptocal.org</a>.</p>
+
+      <h2>Changes</h2>
+      <p>If DropToCal ever starts handling data differently — for example a paid option where requests go through
+        a server of ours — this page will say so before that happens, with a new date at the top.</p>
+
+      <footer class="muted">
+        <a href="./">DropToCal</a> · <a href="mailto:hello@droptocal.org">hello@droptocal.org</a>
+      </footer>
+    </main>
+  </body>
+</html>

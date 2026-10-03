@@ -330,7 +330,12 @@ export function SettingsPanel({ settings, onSave, onClose }: Props) {
           </p>
         )}
 
-        <p className="hint build">Build {__BUILD__} UTC</p>
+        <p className="hint build">
+          Build {__BUILD__} UTC ·{' '}
+          <a href="https://droptocal.org/privacy" target="_blank" rel="noreferrer">
+            Privacy
+          </a>
+        </p>
 
         <div className="sheet-actions">
           <button
