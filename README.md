@@ -4,6 +4,7 @@ Point it at an event poster — a photo, a screenshot, a PDF or a link — and g
 calendar file back. An OpenAI-compatible model reads the dates; you check them; the
 app writes the `.ics`.
 
+It runs at **[droptocal.org](https://droptocal.org)**, and as an Android app.
 Everything runs in the browser, or in the app. There is no backend: it calls
 an OpenAI-compatible API of your choosing, with your own key.
 
@@ -101,7 +102,7 @@ find the poster again. So it is also a target.
 - **`?url=` / `?text=`**: anything can hand DropToCal a link.
 
   ```js
-  javascript:location.href='https://jibes.github.io/cal-drop/?url='+encodeURIComponent(location.href)
+  javascript:location.href='https://droptocal.org/?url='+encodeURIComponent(location.href)
   ```
 
 ## Configuration
